@@ -1,0 +1,12 @@
+{
+  "name": "Example - low-viscosity resin (placeholder)",
+  "viscosity_cp": 5.0,
+  "density_g_cm3": 0.95,
+  "evaporation_rate_um_s": 0.15,
+  "concentration_mode": "direct",
+  "solids_pct": 5.0,
+  "weight_pct": null,
+  "density_solute_g_cm3": null,
+  "density_solvent_g_cm3": null,
+  "notes": "Placeholder values for orientation, not datasheet values -- calibrate against your own measurements (ellipsometry/profilometry) before use."
+}
