@@ -25,7 +25,7 @@ import random
 from dataclasses import dataclass
 from enum import Enum
 
-import meyerhofer as model
+from . import compute as model
 
 
 # ============================================================================

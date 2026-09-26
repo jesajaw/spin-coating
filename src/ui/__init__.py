@@ -1,2 +1,2 @@
-import theme, ui
-__all__=["theme", "ui"]
+from . import settings, theme
+__all__ = ["settings", "theme"]

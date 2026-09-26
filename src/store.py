@@ -4,7 +4,7 @@ evaporation rate, solids fraction) that are independent of the process
 parameter spin speed -- spin speed is a user choice for a given run, not a
 material property, and is therefore deliberately NOT stored in a preset.
 
-Storage format: one JSON file per preset under config.ui.RESINS_DIR.
+Storage format: one JSON file per preset under ui.settings.PRESETS_DIR.
 Kept deliberately simple (no DB, no schema versioning) -- presets are
 hand-curated files of a few kB, nothing that needs a real database.
 """
@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, asdict, fields
 from pathlib import Path
 
-from ..config import ui as cfg_ui
+from .ui import settings as cfg_ui
 
 
 @dataclass
@@ -45,8 +45,8 @@ def _slug(name: str) -> str:
 
 
 def _ensure_dir() -> Path:
-    cfg_ui.RESINS_DIR.mkdir(parents=True, exist_ok=True)
-    return cfg_ui.RESINS_DIR
+    cfg_ui.PRESETS_DIR.mkdir(parents=True, exist_ok=True)
+    return cfg_ui.PRESETS_DIR
 
 
 def _scan() -> dict[str, Path]:
