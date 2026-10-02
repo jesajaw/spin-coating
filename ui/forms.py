@@ -72,12 +72,12 @@ class ParamForm(ttk.Frame):
     def _add_field(self, key: str) -> None:
         spec = P.PARAMS[key]
         if self.kind == "values":
-            f = NumberField(self, spec.label_tex, self.state[key], spec.minimum, spec.maximum, spec.fmt,
+            f = NumberField(self, spec.label_tex_for(self.model_id), self.state[key], spec.minimum, spec.maximum, spec.fmt,
                             on_change=lambda v, k=key: self._edited(k, v), log=spec.log, scale=spec.scale)
         else:
             unit = r"\mathrm{pp}" if key == "solids_fraction" else spec.unit_tex
             unit = rf" [${unit}$]" if unit else ""
-            f = NumberField(self, rf"$\pm$ {spec.name} $\Delta {spec.symbol}${unit}", self.state[key],
+            f = NumberField(self, rf"$\pm$ {spec.name} $\Delta {spec.symbol_for(self.model_id)}${unit}", self.state[key],
                             0.0, spec.sigma_max, spec.sigma_fmt, on_change=lambda v, k=key: self._edited(k, v),
                             scale=spec.scale)
         f.pack(fill="x")

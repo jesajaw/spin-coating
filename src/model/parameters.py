@@ -14,7 +14,7 @@ g/cm^3, um/s, um, s, fraction 0..1). The keys are the keys of PARAMS.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 # -- Unit conversion factors: lab units -> SI ---------------------------------
 RPM_TO_RAD_S = math.pi / 30.0      # omega [rad/s] = rpm * pi/30
@@ -83,6 +83,15 @@ class ParamSpec:
     scale: float = 1.0        # display value * scale = value in lab units (percent fields: 0.01)
     hard_min: float | None = None   # physical limits used when Monte Carlo draws would leave them
     hard_max: float | None = None
+    symbol_by_model: dict = field(default_factory=dict)   # model id -> symbol, where it differs (eta vs eta_0, ...)
+
+    def symbol_for(self, model_id: str | None = None) -> str:
+        """Symbol as the README writes it for this model (mathtext, no $)."""
+        return self.symbol_by_model.get(model_id, self.symbol)
+
+    def label_tex_for(self, model_id: str | None = None) -> str:
+        unit = rf" [${self.unit_tex}$]" if self.unit_tex else ""
+        return rf"{self.name} ${self.symbol_for(model_id)}${unit}"
 
     @property
     def label_tex(self) -> str:
@@ -92,6 +101,10 @@ class ParamSpec:
     @property
     def label_plain(self) -> str:
         return f"{self.name} [{self.unit}]" if self.unit else self.name
+
+    def sigma_label_tex_for(self, model_id: str | None = None) -> str:
+        unit = rf" [${self.unit_tex}$]" if self.unit_tex else ""
+        return rf"$\pm$ ${self.symbol_for(model_id)}${unit}"
 
     @property
     def sigma_label_tex(self) -> str:
@@ -105,7 +118,8 @@ PARAMS: dict[str, ParamSpec] = {p.key: p for p in (
               sigma_max=2000.0, sigma_fmt="%.1f", hard_min=1e-6),
     ParamSpec("viscosity_cp", "Viscosity", r"\eta", "cP", r"\mathrm{cP}",
               default=10.0, minimum=0.1, maximum=5000.0, fmt="%.2f",
-              sigma_max=1000.0, sigma_fmt="%.2f", hard_min=1e-9),
+              sigma_max=1000.0, sigma_fmt="%.2f", hard_min=1e-9,
+              symbol_by_model={"meyerhofer": r"\eta_0", "flack": r"\eta_0"}),
     ParamSpec("density_g_cm3", "Solution density", r"\rho", "g/cm3", r"\mathrm{g/cm^3}",
               default=1.0, minimum=0.1, maximum=3.0, fmt="%.3f",
               sigma_max=1.0, sigma_fmt="%.3f", hard_min=1e-9),
@@ -117,7 +131,8 @@ PARAMS: dict[str, ParamSpec] = {p.key: p for p in (
               sigma_max=60.0, sigma_fmt="%.2f", log=True, hard_min=0.0),
     ParamSpec("evaporation_um_s", "Evaporation rate", r"E", "um/s", r"\mu\mathrm{m/s}",
               default=0.10, minimum=0.001, maximum=10.0, fmt="%.3f",
-              sigma_max=5.0, sigma_fmt="%.4f", log=True, hard_min=1e-9),
+              sigma_max=5.0, sigma_fmt="%.4f", log=True, hard_min=1e-9,
+              symbol_by_model={"flack": r"E_0"}),
     ParamSpec("solids_fraction", "Solids volume fraction", r"C_0", "%", r"\%",
               default=10.0, minimum=0.1, maximum=99.0, fmt="%.2f",
               sigma_max=20.0, sigma_fmt="%.3f", scale=0.01, hard_min=1e-6, hard_max=0.999999),
@@ -144,7 +159,7 @@ MODELS: dict[str, ModelInfo] = {m.id: m for m in (
               "final dry film thickness",
               COMMON_KEYS + ("evaporation_um_s", "solids_fraction")),
     ModelInfo(MODEL_FLACK, "Flack et al. (1984), depth-averaged", "h_f", r"h_\mathrm{f}",
-              "final dry film thickness, concentration-dependent viscosity and evaporation",
+              "final dry film thickness",
               COMMON_KEYS + ("evaporation_um_s", "solids_fraction", "k_eta", "n_evap"), fast=False),
 )}
 

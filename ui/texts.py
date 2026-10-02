@@ -41,30 +41,31 @@ PHYSICS: dict[str, list[tuple[str, str]]] = {
                  "film keeps thinning; there is no final dry-film thickness."),
         ("tex", r"\frac{\partial h}{\partial t} + \frac{\rho\omega^2 r h^2}{\eta}\frac{\partial h}{\partial r} "
                 r"= -\frac{2\rho\omega^2}{3\eta}h^3"),
-        ("text", "For a uniform film this gives the thickness after the spin time t, starting from the initial "
-                 "thickness h0:"),
+        ("text", "For a uniform film this gives the thickness $h(t)$ after the spin time $t$, starting from the initial "
+                 "thickness $h_0$:"),
         ("tex", r"h = h_0\left(1+\frac{4\rho\omega^2}{3\eta}h_0^2\,t\right)^{-1/2}"),
-        ("text", "For long times or thick starting films the memory of h0 is lost and h approaches "
-                 "(3 eta / (4 rho omega^2 t))^(1/2)."),
+        ("text", "For long times or thick starting films the memory of $h_0$ is lost and $h(t)$ approaches "
+                 r"$\sqrt{3\eta/(4\rho\omega^2 t)}$."),
         ("note", PLACEHOLDER_PHYSICS),
         ("ref", REFERENCES["emslie"]), ("ref", REFERENCES["ossila"]),
         ("note", PLACEHOLDER_SOURCES),
     ],
     P.MODEL_MEYERHOFER: [
         ("title", "Meyerhofer (1978)"),
-        ("text", "Adds a constant solvent evaporation rate E (solvent volume removed per substrate area and time) to "
+        ("text", "Adds a constant solvent evaporation rate $E$ (solvent volume removed per substrate area and time) to "
                  "the Emslie-Bonner-Peck flow term."),
         ("tex", r"0 = \frac{\mathrm{d}h}{\mathrm{d}t} + \frac{2\rho\omega^2}{3\eta}h^3 + E"),
         ("text", "Spin coating passes from flow-dominated to evaporation-dominated thinning. The film thickness at "
-                 "which both rates are equal is estimated by (C is the solute volume fraction):"),
+                 "which both rates are equal is estimated by ($C$ is the solute volume fraction):"),
         ("tex", r"E = \frac{(1-C)\,2\omega^2\rho}{3\eta}\,h^3"),
-        ("text", "Solved for the wet thickness at that point, with the initial concentration C0 and viscosity "
-                 "eta0 = eta(C0):"),
+        ("text", r"Solved for the wet thickness $h_\mathrm{s}$ at that point, with the initial concentration $C_0$ and "
+                 r"viscosity $\eta_0 = \eta(C_0)$:"),
         ("tex", r"h_\mathrm{s}={\left(\frac{3\eta_0E}{2(1-C_0)\rho\omega^2}\right)}^{1/3}"),
         ("text", "The solute no longer leaves the film afterwards, so the dry film is:"),
         ("tex", r"h_\mathrm{f} = C_0\,h_\mathrm{s}"),
-        ("text", "Meyerhofer found E to grow with the square root of the spin speed; this turns "
-                 "h ~ omega^(-2/3) into the commonly observed h ~ omega^(-1/2) (option on the input tab)."),
+        ("text", "Meyerhofer found $E$ to grow with the square root of the spin speed; this turns "
+                 r"$h_\mathrm{f}\propto\omega^{-2/3}$ into the commonly observed $h_\mathrm{f}\propto\omega^{-1/2}$ "
+                 "(option on the input tab)."),
         ("note", PLACEHOLDER_PHYSICS),
         ("ref", REFERENCES["meyerhofer"]), ("ref", REFERENCES["ossila"]),
         ("note", PLACEHOLDER_SOURCES),
@@ -78,11 +79,11 @@ PHYSICS: dict[str, list[tuple[str, str]]] = {
         ("tex", r"\frac{\mathrm{d}q}{\mathrm{d}t} = -\varphi\,Q,\qquad "
                 r"\frac{\mathrm{d}s}{\mathrm{d}t} = -(1-\varphi)\,Q - E(\varphi),\qquad "
                 r"Q=\frac{2\rho\omega^2h^3}{3\,\eta(\varphi)}"),
-        ("text", "q and s are the solute and solvent volumes per area, h = q + s and phi = q / h. Integration ends "
-                 "when the solvent is used up; q is then the dry film thickness."),
+        ("text", r"$q$ and $s$ are the solute and solvent volumes per area, $h = q + s$ and $\varphi = q/h$. Integration ends "
+                 r"when the solvent is used up; $q$ is then the dry film thickness $h_\mathrm{f}$."),
         ("tex", r"\eta(\varphi)=\eta_0\,e^{k_\eta\varphi},\qquad E(\varphi)=E_0\,(1-\varphi)^n"),
         ("note", "Not included: depth profile of the concentration (solid skin), shear thinning, and the fitted "
-                 "constants of the original paper. Calibrate k_eta and n against your own data."),
+                 r"constants of the original paper. Calibrate $k_\eta$ and $n$ against your own data."),
         ("note", PLACEHOLDER_PHYSICS),
         ("ref", REFERENCES["flack"]), ("ref", REFERENCES["bornside"]),
         ("note", PLACEHOLDER_SOURCES),
@@ -107,11 +108,11 @@ PARAM_HELP: dict[str, dict[str, str]] = {
         "default": "Dynamic viscosity of the solution you actually dispense (resin + solvent), not of the pure "
                    "solvent. 1 cP = 1 mPa*s; water is about 1 cP, typical resins and inks 1-1000 cP. Take it from "
                    "the datasheet at your process temperature or measure it.",
-        P.MODEL_MEYERHOFER: "Dynamic viscosity eta0 of the solution you dispense (resin + solvent) at the initial "
-                            "concentration, not of the pure solvent. 1 cP = 1 mPa*s; typical resins and inks "
+        P.MODEL_MEYERHOFER: r"Dynamic viscosity $\eta_0$ of the solution you dispense (resin + solvent) at the initial "
+                            "concentration $C_0$, not of the pure solvent. 1 cP = 1 mPa*s; typical resins and inks "
                             "1-1000 cP. Take it from the datasheet at your process temperature or measure it.",
-        P.MODEL_FLACK: "Dynamic viscosity eta0 of the solution you dispense at the INITIAL concentration (resin + "
-                       "solvent). The model lets it grow with concentration through k_eta. 1 cP = 1 mPa*s.",
+        P.MODEL_FLACK: r"Dynamic viscosity $\eta_0$ of the solution you dispense at the INITIAL concentration (resin + "
+                       r"solvent). The model lets it grow with concentration through $k_\eta$. 1 cP = 1 mPa*s.",
     },
     "density_g_cm3": {
         "default": "Density of the full solution (solvent + solute), not of the pure solvent or the pure solute. "
@@ -133,28 +134,29 @@ PARAM_HELP: dict[str, dict[str, str]] = {
                    "speed above. Typical order of magnitude: 0.01-1 um/s. It depends strongly on solvent, "
                    "temperature and airflow -- best calibrated against your own thickness measurements "
                    "(ellipsometry / profilometry).",
-        P.MODEL_FLACK: "Evaporation rate E0 of the pure solvent (concentration phi = 0), in micrometres per second, "
-                       "at the spin speed above. It slows down as the film concentrates (parameter n). Typical "
+        P.MODEL_FLACK: r"Evaporation rate $E_0$ of the pure solvent (solute fraction $\varphi = 0$), in micrometres per second, "
+                       "at the spin speed above. It slows down as the film concentrates (parameter $n$). Typical "
                        "order of magnitude: 0.01-1 um/s; calibrate against your own thickness measurements.",
     },
     "e_scaling": {
-        "default": "How E away from the reference spin speed is estimated for the plot. Meyerhofer measured "
-                   "E ~ sqrt(rpm) for spinning photoresist; that turns h ~ rpm^(-2/3) into the h ~ rpm^(-1/2) "
-                   "usually reported. The point at the reference speed itself is unaffected either way.",
+        "default": "How $E$ away from the reference spin speed is estimated for the plot. Meyerhofer measured "
+                   r"$E\propto\sqrt{\omega}$ for spinning photoresist; that turns $h_\mathrm{f}\propto\omega^{-2/3}$ into the "
+                   r"$h_\mathrm{f}\propto\omega^{-1/2}$ usually reported. The point at the reference speed itself is "
+                   "unaffected either way.",
     },
     "solids_fraction": {
-        "default": "Volume of solute divided by total solution volume before spinning, in percent. Either type it "
+        "default": "Volume of solute divided by total solution volume before spinning ($C_0$), in percent. Either type it "
                    "directly, or enter the weight fraction from the datasheet ('20 wt% solution') together with "
                    "both pure-component densities; the conversion assumes ideal (additive) mixing volumes.",
     },
     "k_eta": {
-        "default": "How sharply viscosity rises with the solute concentration phi. 0 = constant viscosity. "
+        "default": r"How sharply viscosity rises with the solute fraction $\varphi$. 0 = constant viscosity. "
                    "Generic and illustrative -- calibrate against your own viscosity-vs-concentration data "
-                   "(slope of ln eta over phi).",
+                   r"(slope of $\ln\eta$ over $\varphi$).",
     },
     "n_evap": {
-        "default": "How sharply evaporation slows down as the solvent is used up. 0 = E stays at E0 until the "
-                   "solvent is gone. Generic and illustrative, same caveat as k_eta.",
+        "default": "How sharply evaporation slows down as the solvent is used up. 0 = $E$ stays at $E_0$ until the "
+                   r"solvent is gone. Generic and illustrative, same caveat as $k_\eta$.",
     },
 }
 

@@ -12,7 +12,7 @@ from tkinter import ttk
 
 from src.model import parameters as P
 from . import style, texts
-from .tex import TexLabel
+from .tex import TexLabel, TexParagraph
 from .widgets import ScrollFrame
 
 
@@ -43,6 +43,10 @@ class _InfoWindow(tk.Toplevel):
         ttk.Label(self.scroll.body, text=text, style="Heading.TLabel").pack(anchor="w", pady=(top, 4))
 
     def _paragraph(self, text: str, style_name: str = "Body.TLabel") -> None:
+        if "$" in text:                 # text with formulas: rendered line by line (see tex.TexParagraph)
+            color = style.COLOR_STATUS_TEXT if style_name == "Note.TLabel" else None
+            TexParagraph(self.scroll.body, text, color=color, style_name="TLabel").pack(anchor="w", pady=(0, 8))
+            return
         lbl = ttk.Label(self.scroll.body, text=text, style=style_name, justify="left", wraplength=640)
         lbl.pack(anchor="w", pady=(0, 8))
         self.scroll.track_wrap(lbl, margin=34)
@@ -100,7 +104,7 @@ class ParametersWindow(_InfoWindow):
     def _parameter_block(self, model_id: str, key: str, spec: P.ParamSpec) -> None:
         body = self.scroll.body
         ttk.Separator(body).pack(fill="x", pady=(6, 8))
-        TexLabel(body, spec.label_tex, size=11.5, color=style.COLOR).pack(anchor="w")
+        TexLabel(body, spec.label_tex_for(model_id), size=11.5, color=style.COLOR).pack(anchor="w")
         default = spec.default
         shown = (spec.fmt % default)
         unit = f" {spec.unit}" if spec.unit not in ("", "-") else ""

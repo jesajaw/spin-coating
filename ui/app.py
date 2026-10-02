@@ -2,11 +2,11 @@
 Main application window.
 
     +-----------------------------+--------------------------------------------+
-    | Model [dropdown]            |  plot range / band toggle                  |
-    | [Physics] [Parameters]      |  +--------------------------------------+  |
-    | [Resin presets...]          |  |         spin curve (large)           |  |
-    | [Input | Uncertainty] tabs  |  +--------------------------------------+  |
-    |                             |  Result              | Statistical dev.    |
+    | [Input | Uncertainty] tabs  |  plot range / band toggle                  |
+    |                             |  +--------------------------------------+  |
+    |                             |  |         spin curve (large)           |  |
+    | Model [dropdown]            |  +--------------------------------------+  |
+    | [Physics][Parameters][Res.] |  Result              | Statistical dev.    |
     +-----------------------------+--------------------------------------------+
 
 The model decides which fields exist (see model/parameters.MODELS). Computation is live: every field recomputes the
@@ -94,19 +94,20 @@ class SpinCoatingApp(tk.Tk):
             lbl.pack(anchor="w", pady=(0, 3))
 
     def _build_left(self, parent) -> None:
-        model_box = ttk.LabelFrame(parent, text="Model", padding=10)
-        model_box.pack(fill="x")
-        self.d_model = Dropdown(model_box, "", P.model_names(), P.MODELS[self.model_id].name,
-                                on_change=self._on_model_change, width=36)
+        # Bottom block first (pack side="bottom" reserves its space), then the tabs fill what is left above it.
+        bottom = ttk.Frame(parent)
+        bottom.pack(side="bottom", fill="x", pady=(style.LAYOUT.row_gap, 0))
+        self.d_model = Dropdown(bottom, "Model", P.model_names(), P.MODELS[self.model_id].name,
+                                on_change=self._on_model_change, width=36)      # same widget as the other dropdowns
         self.d_model.pack(fill="x")
-        row = ttk.Frame(model_box)
+        row = ttk.Frame(bottom)
         row.pack(fill="x")
         ttk.Button(row, text="Physics", command=self._open_physics).pack(side="left")
         ttk.Button(row, text="Parameters", command=self._open_parameters).pack(side="left", padx=(6, 0))
         ttk.Button(row, text="Resin presets...", command=self._open_presets).pack(side="left", padx=(6, 0))
 
         self.tabs = ttk.Notebook(parent)
-        self.tabs.pack(fill="both", expand=True, pady=(style.LAYOUT.row_gap, 0))
+        self.tabs.pack(fill="both", expand=True)
 
         input_scroll = ScrollFrame(self.tabs, padding=10)
         self.tabs.add(input_scroll, text="Input")

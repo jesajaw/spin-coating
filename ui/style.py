@@ -124,8 +124,11 @@ def apply_style(root) -> None:
     style.configure("TNotebook", background=COLOR_BG, bordercolor=COLOR_DARK, tabmargins=(0, 2, 0, 0))
     style.configure("TNotebook.Tab", background=COLOR_BG_LIGHT, foreground=COLOR_FG, padding=(14, 5),
                     bordercolor=COLOR_DARK)
+    # clam makes the selected tab bigger (padding + expand map) -> pin both so selected/unselected tabs are equal
     style.map("TNotebook.Tab", background=[("selected", COLOR_DARK), ("active", COLOR_BG_LIGHT)],
-              foreground=[("selected", COLOR_FG), ("active", COLOR)])
+              foreground=[("selected", COLOR_FG), ("active", COLOR)],
+              padding=[("selected", (14, 5)), ("!selected", (14, 5))],
+              expand=[("selected", (0, 0, 0, 0)), ("!selected", (0, 0, 0, 0))])
     style.configure("Vertical.TScrollbar", background=COLOR_BG_LIGHT, troughcolor=COLOR_BG,
                     bordercolor=COLOR_BG, arrowcolor=COLOR_FG, lightcolor=COLOR_BG_LIGHT, darkcolor=COLOR_BG_LIGHT)
     style.map("Vertical.TScrollbar", background=[("active", COLOR_DARK)])
