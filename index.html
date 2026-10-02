@@ -1,0 +1,949 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Spin Coating -- Meyerhofer Model</title>
+<style>
+  :root {
+    --bg: #1e1e24; --bg-light: #2a2a33; --fg: #e0dff0;
+    --accent: #9b59d9; --accent-dark: #6c3fa0; --status: #c9a6f5; --error: #e06666;
+    --font-ui: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: Consolas, "SFMono-Regular", Menlo, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 var(--font-ui); }
+  body { padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); }
+  h1 { margin: 4px 0 14px; font-size: 20px; color: var(--accent); }
+  fieldset { border: 1px solid var(--accent-dark); border-radius: 3px; padding: 12px; margin: 0; min-width: 0; }
+  legend { padding: 0 6px; color: var(--accent); font-weight: 700; }
+  .grid { display: grid; gap: 14px; grid-template-columns: 340px 330px 1fr; align-items: start; }
+  .col-input { grid-row: 1 / 3; }
+  @media (max-width: 1050px) {
+    .grid { grid-template-columns: 1fr; }
+    .col-input { grid-row: auto; }
+  }
+
+  .field { margin-bottom: 4px; }
+  .field-row { display: flex; align-items: center; gap: 8px; }
+  .box {
+    position: relative; width: 140px; height: 26px; background: var(--bg-light);
+    border: 1px solid var(--accent-dark); border-radius: 2px; overflow: hidden;
+    cursor: ew-resize; user-select: none; flex: none;
+  }
+  .box .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-dark); width: 0; pointer-events: none; }
+  .box .val { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 12px; background: transparent; border: none; color: var(--fg); text-align: center; padding: 0; }
+  .box .val:focus { outline: 1px solid var(--accent); }
+  label.flabel { font-size: 13px; }
+  .help { font-size: 11px; color: var(--status); margin: 2px 0 8px; max-width: 300px; }
+  select, input.text {
+    background: var(--bg-light); color: var(--fg); border: 1px solid var(--accent-dark); border-radius: 2px;
+    padding: 5px 6px; font: inherit; width: 100%;
+  }
+  .dropdown { margin-bottom: 4px; }
+  hr.sep { border: none; border-top: 1px solid var(--accent-dark); margin: 10px 0; }
+  button {
+    background: var(--bg-light); color: var(--fg); border: 1px solid var(--accent-dark); border-radius: 2px;
+    padding: 6px 10px; font: inherit; cursor: pointer;
+  }
+  button:hover { background: var(--accent-dark); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { min-width: 0; }
+  .status-line { font-size: 12px; color: var(--status); margin-top: 8px; min-height: 1.4em; }
+  .status-line.error { color: var(--error); }
+
+  .result-big { font-size: 26px; font-weight: 700; color: var(--accent); }
+  .result-big.error { font-size: 15px; color: var(--error); }
+  .result-small { font-size: 13px; color: var(--status); }
+
+  .plot-opts { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; flex-wrap: wrap; font-size: 12px; }
+  .plot-opts .box { width: 80px; }
+  svg#plot { width: 100%; height: 340px; background: var(--bg-light); border: 1px solid var(--accent-dark); border-radius: 2px; }
+  .axis-label { font-size: 10px; fill: var(--status); font-family: var(--font-mono); }
+  .grid-line { stroke: var(--accent-dark); stroke-width: 1; }
+  .curve { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .band { fill: var(--accent-dark); opacity: .45; }
+  .marker { fill: var(--fg); stroke: var(--accent); stroke-width: 1.5; }
+
+  footer { margin-top: 16px; text-align: center; font-size: 12px; opacity: .8; }
+  footer a { color: var(--status); }
+</style>
+</head>
+<body>
+<h1>Spin Coating -- Meyerhofer Model</h1>
+
+<div class="grid">
+  <fieldset class="col-input">
+    <legend>Input</legend>
+    <div id="in-rpm"></div>
+    <div id="in-visc"></div>
+    <div id="in-density"></div>
+    <div id="in-evap"></div>
+    <div class="dropdown">
+      <label class="flabel">Evaporation rate vs. spin speed</label>
+      <select id="in-escaling">
+        <option value="sqrt" selected>Grows with sqrt(rpm) (Meyerhofer)</option>
+        <option value="constant">Constant (independent of rpm)</option>
+      </select>
+      <div class="help">How E away from the reference speed above is estimated for the plot. Meyerhofer
+        measured E &prop; sqrt(rpm) for spinning photoresist; that turns the underlying h &prop; rpm&#8315;&sup2;&#8347;&sup3;
+        into the h &prop; rpm&#8315;&sup1;&#8309;&sup2; usually reported. The point at the reference speed itself is unaffected.</div>
+    </div>
+    <hr class="sep">
+    <div class="dropdown">
+      <label class="flabel">Physics model</label>
+      <select id="in-physics">
+        <option value="meyerhofer" selected>Meyerhofer (closed form)</option>
+        <option value="advanced">Advanced (concentration-dependent viscosity/evaporation)</option>
+      </select>
+      <div class="help">Meyerhofer (1978) assumes viscosity and evaporation rate stay constant while the
+        film dries. Flack et al. (1984) and Bornside et al. (1989) showed both actually depend on the local
+        solute concentration -- viscosity climbs, evaporation slows -- which Advanced lets you switch on
+        below (as a depth-averaged approximation of their full spatial models; see README for what that
+        leaves out).</div>
+    </div>
+    <div id="group-advanced" style="display:none">
+      <div id="in-keta"></div>
+      <div id="in-nevap"></div>
+    </div>
+    <hr class="sep">
+    <div class="dropdown">
+      <label class="flabel">Solids fraction from</label>
+      <select id="in-mode">
+        <option value="direct" selected>Volume fraction directly</option>
+        <option value="weight">From weight fraction + densities</option>
+      </select>
+      <div class="help">How the initial solute volume fraction c0 is obtained -- typed directly, or computed
+        from a weight fraction plus both pure-component densities.</div>
+    </div>
+    <div id="group-direct">
+      <div id="in-c0"></div>
+    </div>
+    <div id="group-weight" style="display:none">
+      <div id="in-weight"></div>
+      <div id="in-dsolute"></div>
+      <div id="in-dsolvent"></div>
+      <div class="help">w and both densities are converted to a volume fraction assuming ideal (additive)
+        mixing volumes -- the same assumption the Meyerhofer derivation itself makes.</div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Resin Presets</legend>
+    <div class="row">
+      <select id="preset-select" style="flex:1"></select>
+      <button id="preset-load">Load</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <input class="text" id="preset-name" placeholder="Name for new preset">
+      <button id="preset-save">Save as preset</button>
+    </div>
+    <input class="text" id="preset-notes" placeholder="Note (optional, e.g. source/calibration date)" style="margin-top:8px">
+    <div class="status-line" id="preset-status"></div>
+    <div class="help" style="margin-top:8px">Presets store material properties (viscosity, density, evaporation
+      rate, solids fraction) -- not the spin speed, since that is a per-run process choice, not a material
+      property. Saved in this browser (localStorage), not shared with anyone else.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Film Thickness vs. Spin Speed</legend>
+    <div class="plot-opts">
+      <span>Plot range:</span><div id="in-plotmin"></div><span>to</span><div id="in-plotmax"></div><span>rpm</span>
+      <label><input type="checkbox" id="in-showband" checked> Show uncertainty band</label>
+    </div>
+    <svg id="plot" viewBox="0 0 560 340" preserveAspectRatio="none"></svg>
+  </fieldset>
+
+  <fieldset>
+    <legend>Statistical Deviation</legend>
+    <div class="dropdown">
+      <label class="flabel">Method</label>
+      <select id="in-method">
+        <option value="none" selected>None</option>
+        <option value="gauss">Gauss (analytic)</option>
+        <option value="mc">Monte Carlo</option>
+      </select>
+    </div>
+    <div id="group-unc" style="display:none">
+      <div id="group-mc" style="display:none">
+        <div class="dropdown">
+          <label class="flabel">Distribution shape (Monte Carlo)</label>
+          <select id="in-mcdist">
+            <option value="gauss" selected>Normal distribution (Gauss)</option>
+            <option value="uniform">Uniform distribution</option>
+            <option value="triangular">Triangular distribution</option>
+          </select>
+        </div>
+        <div id="in-mcn"></div>
+      </div>
+      <div id="group-mc-run" style="display:none">
+        <div class="help">Advanced model: each sample re-solves the full ODE, so this isn't live -- click to
+          (re)compute:</div>
+        <button id="mc-run" type="button">Run Monte Carlo</button>
+      </div>
+      <div class="help">Uncertainties (+/-, 0 = none):</div>
+      <div id="in-sig-rpm"></div>
+      <div id="in-sig-visc"></div>
+      <div id="in-sig-density"></div>
+      <div id="in-sig-evap"></div>
+      <div id="in-sig-c0"></div>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Result</legend>
+    <div class="result-big" id="out-main">--</div>
+    <div class="result-small" id="out-caption"></div>
+    <div class="result-small" id="out-transition" style="margin-top:8px"></div>
+    <div class="result-small" id="out-omega"></div>
+    <div class="result-small" id="out-c0"></div>
+    <hr class="sep">
+    <div class="result-small" id="out-stat1"></div>
+    <div class="result-small" id="out-stat2"></div>
+    <div class="result-small" id="out-stat3"></div>
+  </fieldset>
+</div>
+
+<footer>Open source &middot; <a href="https://github.com/jesajaw/spin-coating">github.com/jesajaw/spin-coating</a></footer>
+
+<script>
+"use strict";
+// ============================================================================
+// LOGIC_START -- pure model logic (no DOM); mirrors src/model/*.py exactly.
+// ============================================================================
+const RPM_TO_RAD_S = Math.PI / 30.0;
+const CP_TO_PA_S = 1.0e-3;
+const G_CM3_TO_KG_M3 = 1.0e3;
+const UM_S_TO_M_S = 1.0e-6;
+const M_TO_NM = 1.0e9;
+const M_TO_UM = 1.0e6;
+
+function fromLabUnits(rpm, viscCp, densGcm3, evapUmS, c0) {
+  return {
+    omega: rpm * RPM_TO_RAD_S,
+    viscosity: viscCp * CP_TO_PA_S,
+    density: densGcm3 * G_CM3_TO_KG_M3,
+    evaporationRate: evapUmS * UM_S_TO_M_S,
+    solidsFraction: c0,
+  };
+}
+
+function validate(p) {
+  if (p.omega <= 0) return "Spin speed must be > 0.";
+  if (p.viscosity <= 0) return "Viscosity must be > 0.";
+  if (p.density <= 0) return "Density must be > 0.";
+  if (p.evaporationRate <= 0) return "Evaporation rate must be > 0.";
+  if (!(p.solidsFraction > 0 && p.solidsFraction < 1)) return "Solids volume fraction must be between 0 and 1 (exclusive).";
+  return null;
+}
+
+// Eq. 2/3 (see src/model/compute.py for the full derivation and references)
+function compute(p) {
+  const err = validate(p);
+  if (err) throw new Error(err);
+  const hS = Math.cbrt((3 * p.viscosity * p.evaporationRate) / (2 * p.density * p.omega ** 2 * (1 - p.solidsFraction)));
+  const hF = p.solidsFraction * hS;
+  return { omega: p.omega, transitionThickness: hS, finalThickness: hF,
+    finalThicknessNm: hF * M_TO_NM, finalThicknessUm: hF * M_TO_UM, transitionThicknessUm: hS * M_TO_UM };
+}
+
+function volumeFractionFromWeightFraction(w, densSolute, densSolvent) {
+  if (!(w > 0 && w < 1)) throw new Error("Weight fraction must be between 0 and 1 (exclusive).");
+  if (densSolute <= 0 || densSolvent <= 0) throw new Error("Densities must be > 0.");
+  const vSolute = w / densSolute, vSolvent = (1 - w) / densSolvent;
+  return vSolute / (vSolute + vSolvent);
+}
+
+function evaporationAt(eRefUmS, rpmRef, rpm, scaling) {
+  return scaling === "sqrt" ? eRefUmS * Math.sqrt(rpm / rpmRef) : eRefUmS;
+}
+
+function thicknessNm(rpm, viscCp, densGcm3, eUmS, c0) {
+  return compute(fromLabUnits(rpm, viscCp, densGcm3, eUmS, c0)).finalThicknessNm;
+}
+
+function thicknessAtRpm(lab, rpm) {
+  const e = evaporationAt(lab.evaporationUmS, lab.rpm, rpm, lab.eScaling);
+  return thicknessNm(rpm, lab.viscosityCp, lab.densityGcm3, e, lab.solidsFraction);
+}
+
+function spinCurve(lab, rpmMin, rpmMax, points) {
+  if (!(rpmMin > 0 && rpmMin < rpmMax)) throw new Error("Plot range needs 0 < min < max.");
+  points = Math.max(points, 2);
+  const ratio = Math.pow(rpmMax / rpmMin, 1 / (points - 1));
+  const out = [];
+  for (let i = 0; i < points; i++) {
+    const x = rpmMin * Math.pow(ratio, i);
+    out.push([x, thicknessAtRpm(lab, x)]);
+  }
+  return out;
+}
+
+// -- deviation: analytic Gauss propagation (mirrors src/model/deviation.py) --
+function relSigma(sigma, value) { return (value === 0 || sigma === 0) ? 0 : Math.abs(sigma / value); }
+
+function relativeSigmaAnalytic(lab, sig, rpm) {
+  rpm = rpm === undefined ? lab.rpm : rpm;
+  const c = lab.solidsFraction;
+  const aRpm = lab.eScaling === "sqrt" ? 0.5 : 2 / 3;
+  const aC = 1 + c / (3 * (1 - c));
+  const terms = [
+    [aC, relSigma(sig.solidsFraction, c)],
+    [1 / 3, relSigma(sig.viscosityCp, lab.viscosityCp)],
+    [1 / 3, relSigma(sig.evaporationUmS, lab.evaporationUmS)],
+    [1 / 3, relSigma(sig.densityGcm3, lab.densityGcm3)],
+    [aRpm, relSigma(sig.rpm, rpm)],
+  ];
+  return Math.sqrt(terms.reduce((s, [a, r]) => s + (a * r) ** 2, 0));
+}
+
+function propagateAnalytic(lab, sig, nominalNm) {
+  const rel = relativeSigmaAnalytic(lab, sig);
+  return { meanNm: nominalNm, sigmaNm: nominalNm * rel, relativeSigma: rel };
+}
+
+function analyticBand(lab, sig, curve) {
+  return curve.map(([rpm, h]) => { const s = h * relativeSigmaAnalytic(lab, sig, rpm); return [h - s, h + s]; });
+}
+
+// -- deviation: Monte Carlo (mirrors src/model/deviation.py) -----------------
+// Small seeded PRNG (mulberry32) so results are reproducible -- unrelated
+// re-computes must not make the numbers jitter, same as the fixed seed
+// used on the Python side (a different RNG algorithm, so figures won't
+// match bit-for-bit between the two versions, but both are internally stable).
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function unitDraws(kind, n, seed) {
+  const rnd = mulberry32(seed);
+  const gauss = () => { // Box-Muller
+    let u = 0, v = 0;
+    while (u === 0) u = rnd();
+    while (v === 0) v = rnd();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+  const triangular = () => { const u = rnd(); return u < 0.5 ? (Math.sqrt(u / 2) * 2 - 1) : (1 - Math.sqrt((1 - u) / 2) * 2); };
+  const draw = kind === "gauss" ? gauss : kind === "uniform" ? () => rnd() * 2 - 1 : triangular;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push([draw(), draw(), draw(), draw(), draw()]);
+  return out;
+}
+
+function sampleThickness(lab, sig, u, rpmNominal) {
+  const rpm = Math.max(rpmNominal + sig.rpm * u[0], 1e-6);
+  const eta = Math.max(lab.viscosityCp + sig.viscosityCp * u[1], 1e-9);
+  const rho = Math.max(lab.densityGcm3 + sig.densityGcm3 * u[2], 1e-9);
+  const eParam = Math.max(lab.evaporationUmS + sig.evaporationUmS * u[3], 1e-9);
+  const c = Math.min(Math.max(lab.solidsFraction + sig.solidsFraction * u[4], 1e-6), 0.999999);
+  const e = lab.eScaling === "sqrt" ? eParam * Math.sqrt(rpm / lab.rpm) : eParam;
+  return thicknessNm(rpm, eta, rho, e, c);
+}
+
+function percentile(sorted, p) { return sorted[Math.min(Math.floor(p * sorted.length), sorted.length - 1)]; }
+
+function propagateMonteCarlo(lab, sig, kind, n, seed) {
+  if (n < 2) throw new Error("Monte Carlo needs at least 2 samples.");
+  const draws = unitDraws(kind, n, seed);
+  const samples = draws.map(u => sampleThickness(lab, sig, u, lab.rpm)).sort((a, b) => a - b);
+  const mean = samples.reduce((a, b) => a + b, 0) / n;
+  const variance = samples.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  return { n, meanNm: mean, stdNm: Math.sqrt(variance), p05Nm: percentile(samples, 0.05),
+    p50Nm: percentile(samples, 0.5), p95Nm: percentile(samples, 0.95) };
+}
+
+function monteCarloBand(lab, sig, kind, rpms, n, seed) {
+  const draws = unitDraws(kind, n, seed);
+  return rpms.map(rpm => {
+    const samples = draws.map(u => sampleThickness(lab, sig, u, rpm)).sort((a, b) => a - b);
+    return [percentile(samples, 0.05), percentile(samples, 0.95)];
+  });
+}
+
+// ============================================================================
+// ADVANCED MODEL -- concentration-dependent viscosity & evaporation, solved
+// by direct numerical integration. Mirrors src/model/advanced.py exactly
+// (see that file's docstring for the physics, references, and honest
+// limitations -- this is NOT a literal port of Flack (1984) or Bornside
+// (1989); it is Meyerhofer's own general Eq. 1, integrated numerically with
+// eta and E allowed to depend on concentration, as a depth-averaged
+// approximation of the mechanism those papers describe).
+// ============================================================================
+const SOLVENT_DEPLETION_TOL = 1e-7;
+
+function advEta(phi, eta0, kEta) { return eta0 * Math.exp(kEta * phi); }
+function advEvap(phi, e0, nEvap) { return nEvap > 0 ? e0 * Math.pow(Math.max(1 - phi, 0), nEvap) : e0; }
+
+function advDerivatives(q, s, p) {
+  const h = q + s;
+  const phi = h > 0 ? q / h : 1.0;
+  const eta = advEta(phi, p.eta0, p.kEta);
+  const qFlow = (2 * p.rho * p.omega ** 2 * h ** 3) / (3 * eta);
+  const dq = -phi * qFlow;
+  const ds = -(1 - phi) * qFlow - advEvap(phi, p.e0, p.nEvap);
+  return [dq, ds];
+}
+
+function advInitialThickness(p, headroom) {
+  // Same length scale as Meyerhofer's own h_s, used only to seed a "large
+  // enough" wet starting thickness -- see compute()/transitionThickness().
+  const hS = Math.cbrt((3 * p.eta0 * p.e0) / (2 * p.rho * p.omega ** 2 * (1 - p.phi0)));
+  return headroom * hS;
+}
+
+function advRk4Step(q, s, p, dt) {
+  const clampQ = v => Math.max(v, 0);
+  const clampS = v => Math.max(v, 0);
+  let [k1q, k1s] = advDerivatives(q, s, p);
+  let q2 = clampQ(q + 0.5 * dt * k1q), s2 = clampS(s + 0.5 * dt * k1s);
+  let [k2q, k2s] = advDerivatives(q2, s2, p);
+  let q3 = clampQ(q + 0.5 * dt * k2q), s3 = clampS(s + 0.5 * dt * k2s);
+  let [k3q, k3s] = advDerivatives(q3, s3, p);
+  let q4 = clampQ(q + dt * k3q), s4 = clampS(s + dt * k3s);
+  let [k4q, k4s] = advDerivatives(q4, s4, p);
+  const dq = (dt / 6) * (k1q + 2 * k2q + 2 * k3q + k4q);
+  const ds = (dt / 6) * (k1s + 2 * k2s + 2 * k3s + k4s);
+  return [dq, ds];
+}
+
+function advSimulate(p, headroom = 20, maxSteps = 4000, relTol = 1e-7) {
+  if (!(p.omega > 0 && p.eta0 > 0 && p.rho > 0 && p.e0 > 0)) throw new Error("Spin speed, viscosity, density and evaporation rate must all be > 0.");
+  if (!(p.phi0 > 0 && p.phi0 < 1)) throw new Error("Initial solids volume fraction must be between 0 and 1 (exclusive).");
+
+  const h0 = advInitialThickness(p, headroom);
+  let q = h0 * p.phi0, s = h0 * (1 - p.phi0);
+  const sFloor = s * SOLVENT_DEPLETION_TOL;
+  const tau0 = (3 * p.eta0) / (4 * p.rho * p.omega ** 2 * h0 ** 2);
+  let dt = tau0 * 0.05;
+  let steps = 0, converged = false;
+
+  for (let iter = 0; iter < maxSteps; iter++) {
+    let qMid, sMid, q2s, err;
+    for (let retry = 0; retry < 40; retry++) {
+      const [dqFull] = advRk4Step(q, s, p, dt);
+      const [dq1, ds1] = advRk4Step(q, s, p, dt * 0.5);
+      qMid = Math.max(q + dq1, 0); sMid = Math.max(s + ds1, 0);
+      const [dq2, ds2] = advRk4Step(qMid, sMid, p, dt * 0.5);
+      q2s = [Math.max(qMid + dq2, 0), Math.max(sMid + ds2, 0)];
+      const qFull = Math.max(q + dqFull, 0);
+      err = Math.abs(q2s[0] - qFull) / Math.max(q2s[0], 1e-30);
+      if (err <= relTol || dt < tau0 * 1e-10) break;
+      dt *= 0.5;
+    }
+    const sHalf = q2s[1];
+    if (sHalf <= sFloor) {
+      let lo = 0, hi = dt, qAt = q, sAt = s;
+      for (let b = 0; b < 30; b++) {
+        const mid = 0.5 * (lo + hi);
+        const [dqm, dsm] = advRk4Step(q, s, p, mid);
+        const sTry = Math.max(s + dsm, 0);
+        if (sTry > sFloor) { lo = mid; } else { hi = mid; qAt = Math.max(q + dqm, 0); sAt = sTry; }
+      }
+      q = qAt; s = sAt; steps++; converged = true;
+      break;
+    }
+    q = q2s[0]; s = sHalf; steps++;
+    if (err <= relTol / 8) dt *= 1.3;
+  }
+
+  return { finalThickness: q, finalPhi: (q + s) > 0 ? q / (q + s) : 1.0, steps, converged };
+}
+
+function advThicknessNm(lab, kEta, nEvap) {
+  const p = { omega: lab.rpm * Math.PI / 30, eta0: lab.viscosityCp * 1e-3, rho: lab.densityGcm3 * 1e3,
+             e0: lab.evaporationUmS * 1e-6, phi0: lab.solidsFraction, kEta, nEvap };
+  return advSimulate(p).finalThickness * 1e9;
+}
+
+function advSpinCurve(lab, kEta, nEvap, rpmMin, rpmMax, points) {
+  if (!(rpmMin > 0 && rpmMin < rpmMax)) throw new Error("Plot range needs 0 < min < max.");
+  points = Math.max(points, 2);
+  const ratio = Math.pow(rpmMax / rpmMin, 1 / (points - 1));
+  const out = [];
+  for (let i = 0; i < points; i++) {
+    const rpm = rpmMin * Math.pow(ratio, i);
+    const e = evaporationAt(lab.evaporationUmS, lab.rpm, rpm, lab.eScaling);
+    out.push([rpm, advThicknessNm({ rpm, viscosityCp: lab.viscosityCp, densityGcm3: lab.densityGcm3,
+                                    evaporationUmS: e, solidsFraction: lab.solidsFraction, eScaling: lab.eScaling },
+                                  kEta, nEvap)]);
+  }
+  return out;
+}
+
+function advPropagateMonteCarlo(lab, sig, kEta, nEvap, kind, n, seed) {
+  if (n < 2) throw new Error("Monte Carlo needs at least 2 samples.");
+  const draws = unitDraws(kind, n, seed);
+  const samples = draws.map(u => {
+    const rpm = Math.max(lab.rpm + sig.rpm * u[0], 1e-6);
+    const eta = Math.max(lab.viscosityCp + sig.viscosityCp * u[1], 1e-9);
+    const rho = Math.max(lab.densityGcm3 + sig.densityGcm3 * u[2], 1e-9);
+    const eParam = Math.max(lab.evaporationUmS + sig.evaporationUmS * u[3], 1e-9);
+    const c = Math.min(Math.max(lab.solidsFraction + sig.solidsFraction * u[4], 1e-6), 0.999999);
+    const e = lab.eScaling === "sqrt" ? eParam * Math.sqrt(rpm / lab.rpm) : eParam;
+    return advThicknessNm({ rpm, viscosityCp: eta, densityGcm3: rho, evaporationUmS: e, solidsFraction: c,
+                           eScaling: lab.eScaling }, kEta, nEvap);
+  }).sort((a, b) => a - b);
+  const mean = samples.reduce((a, b) => a + b, 0) / n;
+  const variance = samples.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  return { n, meanNm: mean, stdNm: Math.sqrt(variance), p05Nm: percentile(samples, 0.05),
+    p50Nm: percentile(samples, 0.5), p95Nm: percentile(samples, 0.95) };
+}
+
+// LOGIC_END
+
+// ============================================================================
+// UI: a NumberField mirrors ui/widgets.py's NumberField (drag-fill box + type-to-edit)
+// ============================================================================
+const $ = id => document.getElementById(id);
+
+function makeField(container, label, value, min, max, fmt, onChange, help, boxWidth, log) {
+  boxWidth = boxWidth || 140;
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  const row = document.createElement("div");
+  row.className = "field-row";
+  const box = document.createElement("div");
+  box.className = "box";
+  box.style.width = boxWidth + "px";
+  const fill = document.createElement("div");
+  fill.className = "fill";
+  const input = document.createElement("input");
+  input.className = "val";
+  input.type = "text";
+  input.inputMode = "decimal";
+  box.appendChild(fill);
+  box.appendChild(input);
+  row.appendChild(box);
+  const lab = document.createElement("label");
+  lab.className = "flabel";
+  lab.textContent = label;
+  row.appendChild(lab);
+  wrap.appendChild(row);
+  if (help) {
+    const h = document.createElement("div");
+    h.className = "help";
+    h.textContent = help;
+    wrap.appendChild(h);
+  }
+  container.appendChild(wrap);
+
+  const field = { value, min, max, fmt, log: !!log };
+  function frac() {
+    if (field.log && field.min > 0) return (Math.log(field.value) - Math.log(field.min)) / (Math.log(field.max) - Math.log(field.min));
+    return (field.value - field.min) / (field.max - field.min);
+  }
+  function redraw() {
+    fill.style.width = Math.max(0, Math.min(1, frac())) * 100 + "%";
+    input.value = fmt(field.value);
+  }
+  function setValue(v, fire) {
+    field.value = Math.min(Math.max(v, field.min), field.max);
+    redraw();
+    if (fire && onChange) onChange(field.value);
+  }
+  field.set = setValue;
+  field.get = () => field.value;
+
+  let dragging = false;
+  function valueFromX(x) {
+    const rect = box.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    if (field.log && field.min > 0) return Math.exp(Math.log(field.min) + f * (Math.log(field.max) - Math.log(field.min)));
+    return field.min + f * (field.max - field.min);
+  }
+  box.addEventListener("pointerdown", e => {
+    if (document.activeElement === input) return;
+    dragging = true;
+    box.setPointerCapture(e.pointerId);
+    setValue(valueFromX(e.clientX), true);
+  });
+  box.addEventListener("pointermove", e => { if (dragging) setValue(valueFromX(e.clientX), true); });
+  box.addEventListener("pointerup", () => { dragging = false; });
+  box.addEventListener("dblclick", () => { input.focus(); input.select(); });
+  input.addEventListener("keydown", e => { if (e.key === "Enter") input.blur(); });
+  input.addEventListener("focus", () => { dragging = false; });
+  input.addEventListener("blur", () => {
+    const v = parseFloat(input.value);
+    if (!isNaN(v)) setValue(v, true); else redraw();
+  });
+
+  redraw();
+  return field;
+}
+
+const fmt = d => v => v.toFixed(d);
+
+// ============================================================================
+// Build the Input fields
+// ============================================================================
+const F = {};
+F.rpm = makeField($("in-rpm"), "Spin speed [rpm]", 3000, 100, 12000, fmt(0), markDirty, null, 140);
+F.rpm.help = "Rotation speed of the chuck. Also the reference speed the evaporation rate below is given at.";
+F.visc = makeField($("in-visc"), "Viscosity [cP = mPa*s]", 10, 0.1, 5000, fmt(2), markDirty, null, 140);
+F.density = makeField($("in-density"), "Solution density [g/cm3]", 1.0, 0.1, 3.0, fmt(3), markDirty, null, 140);
+F.evap = makeField($("in-evap"), "Evaporation rate E [um/s]", 0.10, 0.001, 10.0, fmt(3), markDirty,
+  "Solvent volume evaporated per substrate area and time, at the spin speed above. Typical order of " +
+  "magnitude 0.01-1 um/s; best calibrated against your own measurements.", 140);
+F.c0 = makeField($("in-c0"), "Solids volume fraction c0 [%]", 10.0, 0.1, 99.0, fmt(2), markDirty,
+  "Volume of solute divided by total solution volume, before spinning starts.", 140);
+F.weight = makeField($("in-weight"), "Solids weight fraction w [%]", 10.0, 0.1, 99.0, fmt(2), markDirty,
+  "Mass of solute divided by total solution mass -- usually what a datasheet gives ('20 wt% solution').", 140);
+F.dsolute = makeField($("in-dsolute"), "Solute density (pure) [g/cm3]", 1.2, 0.1, 10.0, fmt(3), markDirty, null, 140);
+F.dsolvent = makeField($("in-dsolvent"), "Solvent density (pure) [g/cm3]", 0.9, 0.1, 3.0, fmt(3), markDirty, null, 140);
+F.kEta = makeField($("in-keta"), "Viscosity growth k_eta", 5.0, 0, 30, fmt(2), markDirty,
+  "eta(phi) = eta0 * exp(k_eta * phi): how sharply viscosity rises as the solute concentration phi grows. " +
+  "0 = constant viscosity. Generic/illustrative -- calibrate against your own viscosity-vs-concentration data.", 140);
+F.nEvap = makeField($("in-nevap"), "Evaporation slowdown n", 1.0, 0, 6, fmt(2), markDirty,
+  "E(phi) = E0 * (1 - phi)^n: how sharply evaporation slows as solvent depletes. 0 = stays at E0 until the " +
+  "solvent is fully gone. Generic/illustrative, same caveat as above.", 140);
+F.plotMin = makeField($("in-plotmin"), "", 500, 50, 20000, fmt(0), markDirty, null, 80);
+F.plotMax = makeField($("in-plotmax"), "", 8000, 50, 20000, fmt(0), markDirty, null, 80);
+F.mcN = makeField($("in-mcn"), "Number of samples", 2000, 100, 20000, fmt(0), markDirty, null, 140);
+F.sigRpm = makeField($("in-sig-rpm"), "+/- Spin speed [rpm]", 0, 0, 2000, fmt(1), markDirty, null, 140);
+F.sigVisc = makeField($("in-sig-visc"), "+/- Viscosity [cP]", 0, 0, 1000, fmt(2), markDirty, null, 140);
+F.sigDensity = makeField($("in-sig-density"), "+/- Density [g/cm3]", 0, 0, 1, fmt(3), markDirty, null, 140);
+F.sigEvap = makeField($("in-sig-evap"), "+/- Evaporation rate [um/s]", 0, 0, 5, fmt(4), markDirty, null, 140);
+F.sigC0 = makeField($("in-sig-c0"), "+/- Solids fraction [pp]", 0, 0, 20, fmt(3), markDirty,
+  "Only reflects the uncertainties entered here -- not the systematic model error of the Meyerhofer model " +
+  "itself (roughly \u00b110-20%, see README).", 140);
+
+// ============================================================================
+// Mode / method / physics-model visibility toggles
+// ============================================================================
+$("in-mode").addEventListener("change", () => { onModeChange(); recompute(); });
+$("in-method").addEventListener("change", () => { onMethodChange(); recompute(); });
+$("in-physics").addEventListener("change", () => { onPhysicsChange(); recompute(); });
+$("in-escaling").addEventListener("change", recompute);
+$("in-mcdist").addEventListener("change", recompute);
+$("in-showband").addEventListener("change", recompute);
+$("mc-run").addEventListener("click", runAdvancedMonteCarlo);
+
+function isAdvanced() { return $("in-physics").value === "advanced"; }
+
+function onModeChange() {
+  const weight = $("in-mode").value === "weight";
+  $("group-direct").style.display = weight ? "none" : "";
+  $("group-weight").style.display = weight ? "" : "none";
+}
+function onPhysicsChange() {
+  const adv = isAdvanced();
+  $("group-advanced").style.display = adv ? "" : "none";
+  const gaussOpt = $("in-method").querySelector('option[value="gauss"]');
+  gaussOpt.disabled = adv;
+  if (adv && $("in-method").value === "gauss") $("in-method").value = "none";
+  $("in-showband").disabled = adv;
+  if (adv) $("in-showband").checked = false; else $("in-showband").checked = true;
+  onMethodChange();
+}
+function onMethodChange() {
+  const method = $("in-method").value;
+  const adv = isAdvanced();
+  $("group-unc").style.display = method === "none" ? "none" : "";
+  $("group-mc").style.display = method === "mc" ? "" : "none";
+  const advMc = method === "mc" && adv;
+  $("group-mc-run").style.display = advMc ? "" : "none";
+  if (advMc) {
+    $("out-stat1").textContent = "Click \"Run Monte Carlo\" below for deviation stats.";
+    $("out-stat2").textContent = ""; $("out-stat3").textContent = "";
+    F.mcN.set(300, false);
+  } else if (method === "mc") {
+    F.mcN.set(2000, false);
+  }
+}
+onModeChange();
+onPhysicsChange();
+
+// ============================================================================
+// Debounce (mirrors app.py's DEBOUNCE_MS)
+// ============================================================================
+let debounceId = null;
+function markDirty() {
+  if (debounceId !== null) clearTimeout(debounceId);
+  debounceId = setTimeout(recompute, 150);
+}
+
+// ============================================================================
+// Read current state -> model inputs
+// ============================================================================
+function solidsFraction() {
+  if ($("in-mode").value === "direct") return F.c0.get() / 100;
+  return volumeFractionFromWeightFraction(F.weight.get() / 100, F.dsolute.get(), F.dsolvent.get());
+}
+function labInput(c0) {
+  return { rpm: F.rpm.get(), viscosityCp: F.visc.get(), densityGcm3: F.density.get(),
+    evaporationUmS: F.evap.get(), solidsFraction: c0, eScaling: $("in-escaling").value };
+}
+function sigmas() {
+  return { rpm: F.sigRpm.get(), viscosityCp: F.sigVisc.get(), densityGcm3: F.sigDensity.get(),
+    evaporationUmS: F.sigEvap.get(), solidsFraction: F.sigC0.get() / 100 };
+}
+function sigmasAny(s) { return s.rpm > 0 || s.viscosityCp > 0 || s.densityGcm3 > 0 || s.evaporationUmS > 0 || s.solidsFraction > 0; }
+
+// ============================================================================
+// Recompute: result panel + plot
+// ============================================================================
+function recompute() {
+  debounceId = null;
+  const adv = isAdvanced();
+  const advMc = adv && $("in-method").value === "mc";
+  if (!advMc) {
+    $("out-stat1").textContent = ""; $("out-stat2").textContent = ""; $("out-stat3").textContent = "";
+  }
+  let c0, lab, finalNm;
+  try {
+    c0 = solidsFraction();
+    lab = labInput(c0);
+    if (adv) {
+      const advResult = advSimulate({ omega: lab.rpm * Math.PI / 30, eta0: lab.viscosityCp * 1e-3,
+        rho: lab.densityGcm3 * 1e3, e0: lab.evaporationUmS * 1e-6, phi0: c0,
+        kEta: F.kEta.get(), nEvap: F.nEvap.get() });
+      if (!advResult.converged) throw new Error("Integration did not converge (solvent never fully " +
+        "depleted) -- try a smaller n_evap or check the inputs.");
+      finalNm = advResult.finalThickness * 1e9;
+    } else {
+      finalNm = compute(fromLabUnits(lab.rpm, lab.viscosityCp, lab.densityGcm3, lab.evaporationUmS, c0)).finalThicknessNm;
+    }
+  } catch (e) {
+    $("out-main").textContent = "--";
+    $("out-main").className = "result-big error";
+    $("out-caption").textContent = e.message;
+    drawPlot([], null, null, false);
+    return;
+  }
+  $("out-main").className = "result-big";
+  $("out-main").textContent = finalNm.toLocaleString(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + " nm";
+  $("out-caption").textContent = `(${(finalNm / 1000).toFixed(3)} \u00b5m)`;
+  if (adv) {
+    $("out-transition").textContent = `Model: Advanced (k_eta=${F.kEta.get().toFixed(2)}, n_evap=${F.nEvap.get().toFixed(2)})`;
+    $("out-omega").textContent = `Omega used: ${(lab.rpm * Math.PI / 30).toFixed(1)} rad/s`;
+  } else {
+    const result = compute(fromLabUnits(lab.rpm, lab.viscosityCp, lab.densityGcm3, lab.evaporationUmS, c0));
+    $("out-transition").textContent = `Wet transition thickness h_s: ${result.transitionThicknessUm.toFixed(3)} \u00b5m`;
+    $("out-omega").textContent = `Omega used: ${result.omega.toFixed(1)} rad/s`;
+  }
+  $("out-c0").textContent = `Volume fraction c0 used: ${(c0 * 100).toFixed(2)} %`;
+
+  const rpmMin = F.plotMin.get(), rpmMax = F.plotMax.get();
+  const method = $("in-method").value;
+  let curve = [], band = null;
+  try {
+    if (rpmMin < rpmMax) {
+      if (adv) {
+        curve = advSpinCurve(lab, F.kEta.get(), F.nEvap.get(), rpmMin, rpmMax, 60);
+      } else {
+        curve = spinCurve(lab, rpmMin, rpmMax, 60);
+        if (method !== "none" && $("in-showband").checked) {
+          const sig = sigmas();
+          if (sigmasAny(sig)) {
+            if (method === "gauss") band = analyticBand(lab, sig, curve);
+            else band = monteCarloBand(lab, sig, $("in-mcdist").value, curve.map(p => p[0]), 800, 12345);
+          }
+        }
+      }
+    }
+  } catch (e) { curve = []; }
+  drawPlot(curve, band, [lab.rpm, finalNm], true);
+
+  if (method === "none" || advMc) {
+    return;
+  }
+  try {
+    const sig = sigmas();
+    if (method === "gauss") {
+      const a = propagateAnalytic(lab, sig, finalNm);
+      $("out-stat1").textContent = `h_f = ${a.meanNm.toFixed(1)} +/- ${a.sigmaNm.toFixed(1)} nm  (1 sigma, Gauss)`;
+      $("out-stat2").textContent = `relative uncertainty: ${(a.relativeSigma * 100).toFixed(1)} %`;
+      $("out-stat3").textContent = `~95% range (+/-2 sigma): ${(a.meanNm - 2 * a.sigmaNm).toFixed(1)} - ${(a.meanNm + 2 * a.sigmaNm).toFixed(1)} nm`;
+    } else {
+      const n = Math.round(F.mcN.get());
+      const mc = propagateMonteCarlo(lab, sig, $("in-mcdist").value, n, 12345);
+      $("out-stat1").textContent = `h_f = ${mc.meanNm.toFixed(1)} nm  (Monte Carlo, n = ${mc.n})`;
+      $("out-stat2").textContent = `standard deviation: ${mc.stdNm.toFixed(1)} nm`;
+      $("out-stat3").textContent = `P05 / P50 / P95: ${mc.p05Nm.toFixed(1)} / ${mc.p50Nm.toFixed(1)} / ${mc.p95Nm.toFixed(1)} nm`;
+    }
+  } catch (e) { $("out-stat1").textContent = "! " + e.message; }
+}
+
+function runAdvancedMonteCarlo() {
+  if (!(isAdvanced() && $("in-method").value === "mc")) return;
+  $("out-stat1").textContent = "Running...";
+  setTimeout(() => {
+    try {
+      const c0 = solidsFraction();
+      const lab = labInput(c0);
+      const sig = sigmas();
+      const n = Math.round(F.mcN.get());
+      const mc = advPropagateMonteCarlo(lab, sig, F.kEta.get(), F.nEvap.get(), $("in-mcdist").value, n, 12345);
+      $("out-stat1").textContent = `h_f = ${mc.meanNm.toFixed(1)} nm  (Monte Carlo, n = ${mc.n})`;
+      $("out-stat2").textContent = `standard deviation: ${mc.stdNm.toFixed(1)} nm`;
+      $("out-stat3").textContent = `P05 / P50 / P95: ${mc.p05Nm.toFixed(1)} / ${mc.p50Nm.toFixed(1)} / ${mc.p95Nm.toFixed(1)} nm`;
+    } catch (e) { $("out-stat1").textContent = "! " + e.message; }
+  }, 10); // small delay so "Running..." actually paints before the (blocking) computation
+}
+
+// ============================================================================
+// Plot: plain SVG line chart (log-x), mirrors ui/widgets.py's SpinCurvePlot
+// ============================================================================
+const SVGNS = "http://www.w3.org/2000/svg";
+const PAD = { l: 46, r: 12, t: 12, b: 28 };
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function drawPlot(points, band, marker, logX) {
+  const svg = $("plot");
+  svg.textContent = "";
+  const W = 560, H = 340;
+  if (points.length < 2) {
+    svg.appendChild(svgEl("text", { x: W / 2, y: H / 2, fill: "var(--status)", "text-anchor": "middle", class: "axis-label" }))
+      .textContent = "Not enough data to plot.";
+    return;
+  }
+  const w = W - PAD.l - PAD.r, h = H - PAD.t - PAD.b;
+  const xs = points.map(p => p[0]);
+  let ys = points.map(p => p[1]);
+  if (band) ys = ys.concat(band.flat());
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(0, ...ys), y1raw = Math.max(...ys);
+  const y1 = y1raw > y0 ? y1raw * 1.08 : y0 + 1;
+
+  const px = x => PAD.l + (logX && x0 > 0 ? w * (Math.log(x) - Math.log(x0)) / (Math.log(x1) - Math.log(x0)) : w * (x - x0) / (x1 - x0));
+  const py = y => PAD.t + h - (h * (y - y0) / (y1 - y0));
+
+  for (let i = 0; i < 5; i++) {
+    const gy = PAD.t + (h * i) / 4;
+    const val = y1 - ((y1 - y0) * i) / 4;
+    svg.appendChild(svgEl("line", { x1: PAD.l, y1: gy, x2: PAD.l + w, y2: gy, class: "grid-line" }));
+    const t = svgEl("text", { x: PAD.l - 6, y: gy + 3, class: "axis-label", "text-anchor": "end" });
+    t.textContent = val.toFixed(0);
+    svg.appendChild(t);
+  }
+  const nX = Math.min(6, xs.length);
+  for (let i = 0; i < nX; i++) {
+    const frac = nX > 1 ? i / (nX - 1) : 0;
+    const xval = logX && x0 > 0 ? x0 * Math.pow(x1 / x0, frac) : x0 + (x1 - x0) * frac;
+    const gx = px(xval);
+    svg.appendChild(svgEl("line", { x1: gx, y1: PAD.t, x2: gx, y2: PAD.t + h, class: "grid-line" }));
+    const t = svgEl("text", { x: gx, y: PAD.t + h + 14, class: "axis-label", "text-anchor": "middle" });
+    t.textContent = xval.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    svg.appendChild(t);
+  }
+  const lblY = svgEl("text", { x: 4, y: PAD.t - 2, class: "axis-label" }); lblY.textContent = "h_f [nm]";
+  svg.appendChild(lblY);
+  const lblX = svgEl("text", { x: PAD.l + w, y: PAD.t + h + 26, class: "axis-label", "text-anchor": "end" });
+  lblX.textContent = "spin speed [rpm]";
+  svg.appendChild(lblX);
+
+  if (band) {
+    const top = xs.map((x, i) => `${px(x)},${py(band[i][1])}`);
+    const bot = xs.slice().reverse().map((x, i) => `${px(x)},${py(band[xs.length - 1 - i][0])}`);
+    svg.appendChild(svgEl("polygon", { points: top.concat(bot).join(" "), class: "band" }));
+  }
+
+  const path = points.map((p, i) => `${i === 0 ? "M" : "L"}${px(p[0])},${py(p[1])}`).join(" ");
+  svg.appendChild(svgEl("path", { d: path, class: "curve" }));
+
+  if (marker) {
+    svg.appendChild(svgEl("circle", { cx: px(marker[0]), cy: py(marker[1]), r: 4, class: "marker" }));
+  }
+}
+
+// ============================================================================
+// Presets (localStorage, since a static GitHub Pages site has no server)
+// ============================================================================
+const PRESET_KEY = "spincoating_presets_v1";
+const BUILTIN_PRESETS = [
+  { name: "Example - high-viscosity resin (placeholder)", viscosityCp: 120.0, densityGcm3: 1.05,
+    evaporationRateUmS: 0.05, concentrationMode: "weight", weightPct: 25.0, densitySoluteGcm3: 1.2,
+    densitySolventGcm3: 0.9,
+    notes: "Placeholder values for orientation, not datasheet values -- calibrate against your own measurements (ellipsometry/profilometry) before use." },
+  { name: "Example - low-viscosity resin (placeholder)", viscosityCp: 5.0, densityGcm3: 0.95,
+    evaporationRateUmS: 0.15, concentrationMode: "direct", solidsPct: 5.0,
+    notes: "Placeholder values for orientation, not datasheet values -- calibrate against your own measurements (ellipsometry/profilometry) before use." },
+];
+
+function loadUserPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESET_KEY) || "[]"); } catch (e) { return []; }
+}
+function saveUserPresets(list) {
+  try { localStorage.setItem(PRESET_KEY, JSON.stringify(list)); } catch (e) { /* storage unavailable -- ignore */ }
+}
+function allPresets() { return BUILTIN_PRESETS.concat(loadUserPresets()); }
+
+function refreshPresetSelect(selectName) {
+  const select = $("preset-select");
+  select.textContent = "";
+  const names = allPresets().map(p => p.name).sort();
+  for (const n of names) {
+    const opt = document.createElement("option");
+    opt.value = n; opt.textContent = n;
+    select.appendChild(opt);
+  }
+  if (selectName && names.includes(selectName)) select.value = selectName;
+}
+refreshPresetSelect();
+
+function applyPreset(p) {
+  F.visc.set(p.viscosityCp, false);
+  F.density.set(p.densityGcm3, false);
+  F.evap.set(p.evaporationRateUmS, false);
+  if (p.concentrationMode === "weight") {
+    $("in-mode").value = "weight";
+    F.weight.set(p.weightPct ?? 10.0, false);
+    F.dsolute.set(p.densitySoluteGcm3 ?? 1.2, false);
+    F.dsolvent.set(p.densitySolventGcm3 ?? 0.9, false);
+  } else {
+    $("in-mode").value = "direct";
+    F.c0.set(p.solidsPct ?? 10.0, false);
+  }
+  onModeChange();
+  recompute();
+}
+
+$("preset-load").addEventListener("click", () => {
+  const name = $("preset-select").value;
+  const preset = allPresets().find(p => p.name === name);
+  const status = $("preset-status");
+  if (!preset) { status.textContent = "Preset not found."; status.className = "status-line error"; return; }
+  applyPreset(preset);
+  status.className = "status-line";
+  status.textContent = `'${preset.name}' loaded${preset.notes ? " -- " + preset.notes : ""}`;
+});
+
+$("preset-save").addEventListener("click", () => {
+  const name = $("preset-name").value.trim();
+  const status = $("preset-status");
+  if (!name) { status.textContent = "Please enter a name for the preset."; status.className = "status-line error"; return; }
+  const mode = $("in-mode").value;
+  const preset = {
+    name, viscosityCp: F.visc.get(), densityGcm3: F.density.get(), evaporationRateUmS: F.evap.get(),
+    concentrationMode: mode,
+    solidsPct: mode === "direct" ? F.c0.get() : undefined,
+    weightPct: mode === "weight" ? F.weight.get() : undefined,
+    densitySoluteGcm3: mode === "weight" ? F.dsolute.get() : undefined,
+    densitySolventGcm3: mode === "weight" ? F.dsolvent.get() : undefined,
+    notes: $("preset-notes").value.trim(),
+  };
+  const list = loadUserPresets().filter(p => p.name !== name);
+  list.push(preset);
+  saveUserPresets(list);
+  refreshPresetSelect(name);
+  status.className = "status-line";
+  status.textContent = `saved as '${name}' (in this browser)`;
+});
+
+// ============================================================================
+recompute();
+</script>
+</body>
+</html>

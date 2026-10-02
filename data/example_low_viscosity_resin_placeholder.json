@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "name": "Example - low-viscosity resin (placeholder)",
+  "notes": "Placeholder values for orientation, not datasheet values -- calibrate against your own measurements (ellipsometry/profilometry) before use.",
+  "model": "meyerhofer",
+  "values": {
+    "rpm": 3000.0,
+    "viscosity_cp": 5.0,
+    "density_g_cm3": 0.95,
+    "h0_um": 100.0,
+    "time_s": 30.0,
+    "evaporation_um_s": 0.15,
+    "k_eta": 5.0,
+    "n_evap": 1.0
+  },
+  "e_scaling": "sqrt",
+  "concentration": {
+    "mode": "direct",
+    "solids_pct": 5.0,
+    "weight_pct": null,
+    "density_solute_g_cm3": null,
+    "density_solvent_g_cm3": null
+  },
+  "uncertainties": {
+    "rpm": 0.0,
+    "viscosity_cp": 0.0,
+    "density_g_cm3": 0.0,
+    "h0_um": 0.0,
+    "time_s": 0.0,
+    "evaporation_um_s": 0.0,
+    "k_eta": 0.0,
+    "n_evap": 0.0,
+    "solids_pp": 0.0
+  }
+}
