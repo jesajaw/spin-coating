@@ -6,14 +6,21 @@ and converts to SI internally.
 
 Emslie, Bonner and Peck solved the flow of a non-volatile liquid (emslie.py);
 Meyerhofer added a solvent evaporation rate E (solvent volume removed per
-substrate area and time). With the solute volume fraction C and the kinematic
-viscosity nu = eta / rho:
+substrate area and time). With the kinematic viscosity nu = eta / rho the total
+film thickness h (solute + solvent) thins by outflow and by evaporation:
 
-    dh/dt = -(2 w^2 h^3 / (3 nu)) (1 - C) - E                                (Eq. 1)
+    dh/dt = -(2 w^2 h^3 / (3 nu)) - E                                        (Eq. 1)
 
-Early on outflow dominates and C stays at its initial value C0; late, the film
+Outflow carries solute and solvent in the film's ratio, so with the solute volume
+fraction C only the share (1 - C) of it is solvent, while evaporation removes
+solvent only. Written for the solvent volume per area L = (1 - C) h:
+
+    dL/dt = -(1 - C) (2 w^2 h^3 / (3 nu)) - E
+
+Early on, outflow dominates and C stays at its initial value C0; late, the film
 is so thin that flow is negligible and only evaporation is left. If the switch
-is abrupt, it happens where both terms of Eq. 1 are equal, at the WET thickness
+is abrupt, it happens where both solvent losses are equal, (1 - C0) times the
+outflow rate = E, at the WET thickness
 
     h_s = ( 3 eta E / (2 (1 - C0) rho w^2) )^(1/3)                           (Eq. 2)
 
@@ -21,6 +28,12 @@ After that point the solute volume per area no longer changes, so with ideal
 (additive) mixing volumes the DRY film is
 
     h_f = C0 * h_s                                                           (Eq. 3)
+
+Note that Eq. 2 alone is the wet thickness; the dry film carries the extra factor C0
+(Ossila's page prints h_s as "final film thickness" in its Eq. 6 but includes C0 in
+its Eq. 7). The closed form assumes an abrupt switch; integrating the full ODE
+(flack.py with k_eta = n = 0) gives a dry film that is about 2 % (C0 = 5 %),
+3 % (10 %) or 10 % (30 %) thinner.
 
 Eq. 2/3 give h_f ~ eta^(1/3) E^(1/3) w^(-2/3). Meyerhofer measured E ~ sqrt(w)
 for spinning photoresist, which turns this into the widely observed

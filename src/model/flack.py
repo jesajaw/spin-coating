@@ -14,8 +14,11 @@ concentration (a spatial model through the film depth; their fitted constants
 paywalled). This module instead solves the "well-mixed" (depth-averaged)
 version of the same mechanism with two GENERIC, illustrative constitutive laws:
 
-    eta(phi) = eta0 * exp(k_eta * phi)        k_eta = 0 -> constant viscosity
-    E(phi)   = E0 * (1 - phi)^n               n     = 0 -> constant E
+    eta(phi) = eta0 * exp(k_eta * (phi - C0))   eta0 = eta(C0): the viscosity of the solution as
+                                                dispensed, same meaning as in meyerhofer.py;
+                                                k_eta = 0 -> constant viscosity
+    E(phi)   = E0 * (1 - phi)^n                 E0 = rate of the pure solvent (phi = 0);
+                                                n     = 0 -> constant E
 
 It captures "viscosity rises and evaporation slows as the film concentrates",
 but no depth profile, no solid skin, no shear thinning. Calibrate k_eta and n
@@ -80,10 +83,10 @@ def validate(v: dict) -> str | None:
 
 
 def _derivatives(q: float, s: float, omega: float, eta0: float, rho: float, e0: float,
-                 k_eta: float, n_evap: float) -> tuple[float, float]:
+                 k_eta: float, n_evap: float, c0: float) -> tuple[float, float]:
     h = q + s
     phi = q / h if h > 0 else 1.0
-    eta = eta0 * math.exp(k_eta * phi)
+    eta = eta0 * math.exp(k_eta * (phi - c0))      # eta(C0) = eta0, rises for phi > C0
     q_flow = (2.0 * rho * omega ** 2 * h ** 3) / (3.0 * eta)
     evap = e0 * max(1.0 - phi, 0.0) ** n_evap if n_evap > 0 else e0
     return -phi * q_flow, -(1.0 - phi) * q_flow - evap
@@ -110,7 +113,7 @@ def simulate(omega: float, eta0: float, rho: float, e0: float, c0: float, k_eta:
     if not (0.0 < c0 < 1.0):
         raise ValueError("Initial solids volume fraction must be between 0 and 1 (exclusive).")
 
-    args = (omega, eta0, rho, e0, k_eta, n_evap)
+    args = (omega, eta0, rho, e0, k_eta, n_evap, c0)
     h0 = headroom * meyerhofer.transition_thickness_m(omega, eta0, rho, e0, c0)
     q, s = h0 * c0, h0 * (1.0 - c0)
     s_floor = s * SOLVENT_DEPLETION_TOL

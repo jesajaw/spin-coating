@@ -81,7 +81,7 @@ PHYSICS: dict[str, list[tuple[str, str]]] = {
                 r"Q=\frac{2\rho\omega^2h^3}{3\,\eta(\varphi)}"),
         ("text", r"$q$ and $s$ are the solute and solvent volumes per area, $h = q + s$ and $\varphi = q/h$. Integration ends "
                  r"when the solvent is used up; $q$ is then the dry film thickness $h_\mathrm{f}$."),
-        ("tex", r"\eta(\varphi)=\eta_0\,e^{k_\eta\varphi},\qquad E(\varphi)=E_0\,(1-\varphi)^n"),
+        ("tex", r"\eta(\varphi)=\eta_0\,e^{k_\eta(\varphi-C_0)},\qquad E(\varphi)=E_0\,(1-\varphi)^n"),
         ("note", "Not included: depth profile of the concentration (solid skin), shear thinning, and the fitted "
                  r"constants of the original paper. Calibrate $k_\eta$ and $n$ against your own data."),
         ("note", PLACEHOLDER_PHYSICS),
@@ -111,8 +111,9 @@ PARAM_HELP: dict[str, dict[str, str]] = {
         P.MODEL_MEYERHOFER: r"Dynamic viscosity $\eta_0$ of the solution you dispense (resin + solvent) at the initial "
                             "concentration $C_0$, not of the pure solvent. 1 cP = 1 mPa*s; typical resins and inks "
                             "1-1000 cP. Take it from the datasheet at your process temperature or measure it.",
-        P.MODEL_FLACK: r"Dynamic viscosity $\eta_0$ of the solution you dispense at the INITIAL concentration (resin + "
-                       r"solvent). The model lets it grow with concentration through $k_\eta$. 1 cP = 1 mPa*s.",
+        P.MODEL_FLACK: r"Dynamic viscosity $\eta_0 = \eta(C_0)$ of the solution you dispense, at the INITIAL concentration "
+                       r"(resin + solvent). The model lets it grow from there as the film concentrates, through "
+                       r"$k_\eta$. 1 cP = 1 mPa*s.",
     },
     "density_g_cm3": {
         "default": "Density of the full solution (solvent + solute), not of the pure solvent or the pure solute. "
@@ -150,7 +151,7 @@ PARAM_HELP: dict[str, dict[str, str]] = {
                    "both pure-component densities; the conversion assumes ideal (additive) mixing volumes.",
     },
     "k_eta": {
-        "default": r"How sharply viscosity rises with the solute fraction $\varphi$. 0 = constant viscosity. "
+        "default": r"How sharply viscosity rises as the solute fraction $\varphi$ grows beyond $C_0$. 0 = constant viscosity. "
                    "Generic and illustrative -- calibrate against your own viscosity-vs-concentration data "
                    r"(slope of $\ln\eta$ over $\varphi$).",
     },
@@ -161,7 +162,7 @@ PARAM_HELP: dict[str, dict[str, str]] = {
 }
 
 PARAM_FORMULA: dict[str, str] = {
-    "k_eta": r"\eta(\varphi)=\eta_0\,e^{k_\eta\varphi}",
+    "k_eta": r"\eta(\varphi)=\eta_0\,e^{k_\eta(\varphi-C_0)}",
     "n_evap": r"E(\varphi)=E_0\,(1-\varphi)^n",
     "e_scaling": r"E(\omega)=E_\mathrm{ref}\sqrt{\omega/\omega_\mathrm{ref}}",
     "solids_fraction": r"C_0=\frac{w/\rho_\mathrm{solute}}{w/\rho_\mathrm{solute}+(1-w)/\rho_\mathrm{solvent}}",

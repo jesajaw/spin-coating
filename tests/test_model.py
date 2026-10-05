@@ -89,6 +89,20 @@ def test_flack_monotonic_in_its_coefficients():
     assert all(a > b for a, b in zip(down, down[1:])), down        # slower evaporation -> thinner film
 
 
+def test_flack_eta0_is_the_viscosity_at_the_initial_concentration():
+    # The help text promises eta0 = eta(C0) (same meaning as in Meyerhofer). So at phi = C0 the flow
+    # rate must not depend on k_eta, and the viscosity may only rise once the film concentrates.
+    omega, eta0, rho, e0, c0, h = 314.0, 0.01, 1000.0, 1e-7, 0.1, 5e-6
+    q, s = c0 * h, (1 - c0) * h
+    base = flack._derivatives(q, s, omega, eta0, rho, e0, 0.0, 0.0, c0)
+    for k in (2.0, 5.0, 20.0):
+        assert flack._derivatives(q, s, omega, eta0, rho, e0, k, 0.0, c0) == base
+    q2, s2 = 0.5 * h, 0.5 * h                                  # concentrated: phi = 0.5 > C0
+    slow = flack._derivatives(q2, s2, omega, eta0, rho, e0, 5.0, 0.0, c0)
+    fast = flack._derivatives(q2, s2, omega, eta0, rho, e0, 0.0, 0.0, c0)
+    assert abs(slow[0]) < abs(fast[0])                         # more viscous -> slower outflow of solute
+
+
 def test_flack_independent_of_internal_start_thickness():
     v = vals(P.MODEL_FLACK)
     omega, eta, rho, e = v["rpm"] * P.RPM_TO_RAD_S, v["viscosity_cp"] * 1e-3, v["density_g_cm3"] * 1e3, 1e-7
