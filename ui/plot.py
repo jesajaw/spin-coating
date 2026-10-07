@@ -26,7 +26,7 @@ def _style_axes(ax) -> None:
     ax.tick_params(colors=style.COLOR_STATUS_TEXT, which="both", labelsize=9)
     ax.xaxis.label.set_color(style.COLOR_FG)
     ax.yaxis.label.set_color(style.COLOR_FG)
-    ax.grid(True, which="major", color="#3c3c48", linewidth=0.7)
+    ax.grid(True, which="major", color=style.COLOR_GRID, linewidth=0.7)
     ax.set_axisbelow(True)
 
 

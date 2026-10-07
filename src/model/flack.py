@@ -9,20 +9,29 @@ IMPORTANT -- what this is and is not
 ------------------------------------
 Flack, Soong, Bell & Hess (1984) [1] account for the non-Newtonian behaviour of
 a resist and for viscosity and solvent diffusivity that change with polymer
-concentration (a spatial model through the film depth; their fitted constants
--- D0, A, B, eta0, kappa0 -- are NOT available to this code, the paper is
-paywalled). This module instead solves the "well-mixed" (depth-averaged)
-version of the same mechanism with two GENERIC, illustrative constitutive laws:
+concentration (a spatial model through the film depth). This module instead
+solves the "well-mixed" (depth-averaged) version of the same mechanism, with a
+choice of two viscosity laws:
 
-    eta(phi) = eta0 * exp(k_eta * (phi - C0))   eta0 = eta(C0): the viscosity of the solution as
-                                                dispensed, same meaning as in meyerhofer.py;
-                                                k_eta = 0 -> constant viscosity
+    "exponential" (default, generic)
+        eta(phi) = eta0 * exp(k_eta * (phi - C0))
+        eta0 = eta(C0): the viscosity of the solution as dispensed, same meaning
+        as in meyerhofer.py; k_eta = 0 -> constant viscosity. k_eta ~ 18 reproduces
+        the paper's PMMA/chlorobenzene curve between about 10 and 50 wt% polymer.
+    "flack_table1" (the paper's measured PMMA law, zero shear rate, Table I)
+        eta_p0(w) = eta_ref * exp(-c / (0.043 + 0.040 c)) * w^2.33,   c = 1 - w
+        eta(phi)  = eta0 * (eta_p0(phi) + eta_s) / (eta_p0(C0) + eta_s)
+        with eta_ref = 7.06e6 Pa s, eta_s = 0.0008 Pa s (solvent). The polymer
+        weight fraction w is identified with the solute volume fraction phi (the
+        paper does the same, similar densities). eta0 still anchors the solution
+        as dispensed, so only the paper's SHAPE is used; k_eta is ignored.
+
     E(phi)   = E0 * (1 - phi)^n                 E0 = rate of the pure solvent (phi = 0);
-                                                n     = 0 -> constant E
+                                                n     = 0 -> constant E (generic law in both cases)
 
 It captures "viscosity rises and evaporation slows as the film concentrates",
-but no depth profile, no solid skin, no shear thinning. Calibrate k_eta and n
-against your own viscosity-vs-concentration and thickness data.
+but no depth profile, no solid skin, no shear thinning, no concentration-dependent
+diffusivity (Fujita-Doolittle). Calibrate k_eta / n against your own data.
 
 Governing ODEs
 --------------
@@ -37,8 +46,8 @@ Integration stops once s is negligible; q is then the dry film thickness.
 With k_eta = n = 0 this is Meyerhofer's Eq. 1 before the closed-form
 approximation (tests/test_model.py checks that it agrees with meyerhofer.py).
 
-Limitation: the exponential eta(phi) stays finite as phi -> 1, unlike real resin
-rheology (divergence near vitrification).
+Limitation: both laws stay finite as phi -> 1, unlike real resin rheology
+(divergence near vitrification).
 
 References
 ----------
@@ -61,6 +70,24 @@ from .parameters import Result
 KEYS = P.MODELS[P.MODEL_FLACK].keys
 SOLVENT_DEPLETION_TOL = 1e-7   # fraction of the initial solvent volume counted as "gone"
 
+# Flack et al. (1984), Table I: zero-shear viscosity of PMMA/chlorobenzene (SI)
+_PAPER_ETA_REF = 7.06e6        # Pa s  (7.06e7 poise)
+_PAPER_ETA_SOLVENT = 0.0008    # Pa s  (0.008 poise)
+
+
+def _paper_eta(w: float) -> float:
+    """eta(w) [Pa s] for polymer weight fraction w, Table I (zero shear)."""
+    w = min(max(w, 1e-9), 1.0)
+    c = 1.0 - w
+    return _PAPER_ETA_REF * math.exp(-c / (0.043 + 0.040 * c)) * w ** 2.33 + _PAPER_ETA_SOLVENT
+
+
+def viscosity_factor(phi: float, c0: float, k_eta: float, law: str = P.VISC_EXP) -> float:
+    """eta(phi) / eta(C0): 1 at the dispensed concentration, rises as the film concentrates."""
+    if law == P.VISC_PAPER:
+        return _paper_eta(phi) / _paper_eta(c0)
+    return math.exp(k_eta * (phi - c0))
+
 
 @dataclass(frozen=True)
 class SimResult:
@@ -79,14 +106,16 @@ def validate(v: dict) -> str | None:
         return "Viscosity growth k_eta must be >= 0."
     if v["n_evap"] < 0:
         return "Evaporation slowdown n must be >= 0."
+    if v.get("visc_law", P.VISC_DEFAULT) not in P.VISC_MODES:
+        return "Unknown viscosity law."
     return None
 
 
 def _derivatives(q: float, s: float, omega: float, eta0: float, rho: float, e0: float,
-                 k_eta: float, n_evap: float, c0: float) -> tuple[float, float]:
+                 k_eta: float, n_evap: float, c0: float, law: str = P.VISC_EXP) -> tuple[float, float]:
     h = q + s
     phi = q / h if h > 0 else 1.0
-    eta = eta0 * math.exp(k_eta * (phi - c0))      # eta(C0) = eta0, rises for phi > C0
+    eta = eta0 * viscosity_factor(phi, c0, k_eta, law)      # eta(C0) = eta0, rises for phi > C0
     q_flow = (2.0 * rho * omega ** 2 * h ** 3) / (3.0 * eta)
     evap = e0 * max(1.0 - phi, 0.0) ** n_evap if n_evap > 0 else e0
     return -phi * q_flow, -(1.0 - phi) * q_flow - evap
@@ -102,7 +131,8 @@ def _rk4_step(q: float, s: float, dt: float, args: tuple) -> tuple[float, float]
 
 
 def simulate(omega: float, eta0: float, rho: float, e0: float, c0: float, k_eta: float, n_evap: float,
-             headroom: float = 20.0, max_steps: int = 4000, rel_tol: float = 1e-7) -> SimResult:
+             headroom: float = 20.0, max_steps: int = 4000, rel_tol: float = 1e-7,
+             visc_law: str = P.VISC_EXP) -> SimResult:
     """
     Adaptive-step RK4 (step doubling) on (q, s), SI units. The initial wet thickness is
     `headroom` times Meyerhofer's transition thickness, so large that the result no longer
@@ -113,7 +143,7 @@ def simulate(omega: float, eta0: float, rho: float, e0: float, c0: float, k_eta:
     if not (0.0 < c0 < 1.0):
         raise ValueError("Initial solids volume fraction must be between 0 and 1 (exclusive).")
 
-    args = (omega, eta0, rho, e0, k_eta, n_evap, c0)
+    args = (omega, eta0, rho, e0, k_eta, n_evap, c0, visc_law)
     h0 = headroom * meyerhofer.transition_thickness_m(omega, eta0, rho, e0, c0)
     q, s = h0 * c0, h0 * (1.0 - c0)
     s_floor = s * SOLVENT_DEPLETION_TOL
@@ -168,7 +198,8 @@ def _run(v: dict) -> tuple[SimResult, float, float]:
     omega = v["rpm"] * P.RPM_TO_RAD_S
     evap = meyerhofer.evaporation_m_s(v)
     res = simulate(omega, v["viscosity_cp"] * P.CP_TO_PA_S, v["density_g_cm3"] * P.G_CM3_TO_KG_M3,
-                   evap, v["solids_fraction"], v["k_eta"], v["n_evap"])
+                   evap, v["solids_fraction"], v["k_eta"], v["n_evap"],
+                   visc_law=v.get("visc_law", P.VISC_DEFAULT))
     if not res.converged:
         raise ValueError("Integration did not converge (solvent never fully depleted) -- "
                          "try a smaller n or check the inputs.")
@@ -181,7 +212,9 @@ def thickness_nm(v: dict) -> float:
 
 def compute(v: dict) -> Result:
     res, omega, evap = _run(v)
-    details = (rf"$k_\eta$ = {v['k_eta']:.2f},  $n$ = {v['n_evap']:.2f}",
+    law = (r"$\eta(\varphi)$: Flack Table I (PMMA)" if v.get("visc_law") == P.VISC_PAPER
+           else rf"$k_\eta$ = {v['k_eta']:.2f}")
+    details = (rf"{law},  $n$ = {v['n_evap']:.2f}",
                rf"$\omega$ = {omega:.1f} rad/s",
                rf"$E$ used: {evap * P.M_TO_UM:.4f} $\mu$m/s",
                rf"$C_0$ used: {v['solids_fraction'] * 100:.2f} %",

@@ -6,7 +6,7 @@ Main application window.
     |                             |  +--------------------------------------+  |
     |                             |  |         spin curve (large)           |  |
     | Model [dropdown]            |  +--------------------------------------+  |
-    | [Physics][Parameters][Res.] |  Result              | Statistical dev.    |
+    | [Parameters][Presets]       |  Result              | Statistical dev.    |
     +-----------------------------+--------------------------------------------+
 
 The model decides which fields exist (see model/parameters.MODELS). Computation is live: every field recomputes the
@@ -25,7 +25,7 @@ from src.model import parameters as P
 import src.model as model
 from . import style
 from .forms import ParamForm
-from .info import ParametersWindow, PhysicsWindow
+from .info import ParametersWindow
 from .plot import SpinCurvePlot
 from .presets import PresetsWindow
 from .tex import TexLabel
@@ -48,7 +48,7 @@ class SpinCoatingApp(tk.Tk):
         self.model_id = P.MODEL_DEFAULT
         self._debounce_id = None
         self._mc_cache: dict | None = None      # on-demand Monte Carlo of a slow model: {"stats", "band"}
-        self._physics_win = self._params_win = self._presets_win = None
+        self._params_win = self._presets_win = None
 
         self._build()
         self._update_method_widgets()
@@ -102,9 +102,8 @@ class SpinCoatingApp(tk.Tk):
         self.d_model.pack(fill="x")
         row = ttk.Frame(bottom)
         row.pack(fill="x")
-        ttk.Button(row, text="Physics", command=self._open_physics).pack(side="left")
-        ttk.Button(row, text="Parameters", command=self._open_parameters).pack(side="left", padx=(6, 0))
-        ttk.Button(row, text="Resin presets...", command=self._open_presets).pack(side="left", padx=(6, 0))
+        ttk.Button(row, text="Parameters", command=self._open_parameters).pack(side="left")
+        ttk.Button(row, text="Parameter presets...", command=self._open_presets).pack(side="left", padx=(6, 0))
 
         self.tabs = ttk.Notebook(parent)
         self.tabs.pack(fill="both", expand=True)
@@ -171,13 +170,6 @@ class SpinCoatingApp(tk.Tk):
     def _alive(self, win) -> bool:
         return win is not None and bool(win.winfo_exists())
 
-    def _open_physics(self) -> None:
-        if self._alive(self._physics_win):
-            self._physics_win.refresh(self.model_id)
-            self._physics_win.lift()
-        else:
-            self._physics_win = PhysicsWindow(self, self.model_id)
-
     def _open_parameters(self) -> None:
         if self._alive(self._params_win):
             self._params_win.refresh(self.model_id)
@@ -215,9 +207,8 @@ class SpinCoatingApp(tk.Tk):
         self._mc_cache = None
         self._adapt_sample_count()
         self._update_method_widgets()
-        for win in (self._physics_win, self._params_win):
-            if self._alive(win):
-                win.refresh(self.model_id)
+        if self._alive(self._params_win):
+            self._params_win.refresh(self.model_id)
         self._recompute()
 
     def _on_method_change(self, _value=None) -> None:

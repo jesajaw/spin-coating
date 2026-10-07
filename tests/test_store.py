@@ -32,9 +32,9 @@ def test_round_trip_keeps_model_values_and_uncertainties():
     state, sigmas = P.default_state(), P.default_sigmas()
     state.update(rpm=4200.0, viscosity_cp=55.5, k_eta=7.0, e_scaling=P.E_CONSTANT, solids_fraction=0.17)
     sigmas.update(rpm=40.0, viscosity_cp=2.5, solids_fraction=0.005)
-    store.save_preset(store.ResinPreset.from_state("Test resin", P.MODEL_FLACK, state, sigmas, "note"))
-    assert "Test resin" in store.list_presets()
-    p = store.load_preset("Test resin")
+    store.save_preset(store.ParameterPreset.from_state("Test preset", P.MODEL_FLACK, state, sigmas, "note"))
+    assert "Test preset" in store.list_presets()
+    p = store.load_preset("Test preset")
     st2, sg2 = p.to_state()
     assert p.model == P.MODEL_FLACK and p.notes == "note"
     assert st2["rpm"] == 4200.0 and st2["k_eta"] == 7.0 and st2["e_scaling"] == P.E_CONSTANT
@@ -47,7 +47,7 @@ def test_weight_mode_round_trip():
     state = P.default_state()
     state.update(conc_mode=P.CONC_WEIGHT, weight_pct=25.0, density_solute_g_cm3=1.3, density_solvent_g_cm3=0.85)
     P.sync_solids_fraction(state)
-    store.save_preset(store.ResinPreset.from_state("w", P.MODEL_MEYERHOFER, state, P.default_sigmas()))
+    store.save_preset(store.ParameterPreset.from_state("w", P.MODEL_MEYERHOFER, state, P.default_sigmas()))
     st2, _ = store.load_preset("w").to_state()
     assert st2["conc_mode"] == P.CONC_WEIGHT and st2["weight_pct"] == 25.0
     assert math.isclose(st2["solids_fraction"], state["solids_fraction"])
@@ -66,6 +66,14 @@ def test_old_flat_format_is_still_read_and_broken_files_are_skipped():
     assert store.list_presets() == ["Old"]
 
 
+def test_shipped_example_files_have_unique_names():
+    """Two files with the same preset name shadow each other in the list (this once happened with old+new format)."""
+    files = sorted(settings.PRESETS_DIR.glob("*.json"))
+    names = [json.loads(f.read_text(encoding="utf-8"))["name"] for f in files]
+    assert len(names) == len(set(names)), names
+    assert sorted(names) == store.list_presets()
+
+
 def test_shipped_example_presets_load():
     for name in store.list_presets():
         state, sigmas = store.load_preset(name).to_state()
@@ -74,7 +82,7 @@ def test_shipped_example_presets_load():
 
 @_with_temp_dir
 def test_delete():
-    store.save_preset(store.ResinPreset.from_state("gone", P.MODEL_EMSLIE, P.default_state(), P.default_sigmas()))
+    store.save_preset(store.ParameterPreset.from_state("gone", P.MODEL_EMSLIE, P.default_state(), P.default_sigmas()))
     store.delete_preset("gone")
     assert store.list_presets() == []
 
@@ -85,3 +93,12 @@ if __name__ == "__main__":
         fn()
         print(f"ok  {name}")
     print(f"{len(tests)} tests passed.")
+
+
+def test_visc_law_round_trips_through_a_preset():
+    state = P.default_state()
+    state["visc_law"] = P.VISC_PAPER
+    pre = store.ParameterPreset.from_state("t", P.MODEL_FLACK, state, P.default_sigmas())
+    back = store.ParameterPreset.from_dict(pre.to_dict()).to_state()[0]
+    assert back["visc_law"] == P.VISC_PAPER
+

@@ -93,18 +93,31 @@
     </div>
     <hr class="sep">
     <div class="dropdown">
-      <label class="flabel">Physics model</label>
-      <select id="in-physics">
-        <option value="meyerhofer" selected>Meyerhofer (closed form)</option>
-        <option value="advanced">Advanced (concentration-dependent viscosity/evaporation)</option>
+      <label class="flabel">Model</label>
+      <select id="in-model">
+        <option value="emslie">Emslie-Bonner-Peck (1958)</option>
+        <option value="meyerhofer" selected>Meyerhofer (1978)</option>
+        <option value="flack">Flack et al. (1984), depth-averaged</option>
       </select>
-      <div class="help">Meyerhofer (1978) assumes viscosity and evaporation rate stay constant while the
-        film dries. Flack et al. (1984) and Bornside et al. (1989) showed both actually depend on the local
-        solute concentration -- viscosity climbs, evaporation slows -- which Advanced lets you switch on
-        below (as a depth-averaged approximation of their full spatial models; see README for what that
-        leaves out).</div>
+      <div class="help">Emslie: wet film thinning by flow only (no evaporation), result h(t) after the spin time.
+        Meyerhofer: flow plus constant evaporation, final dry film thickness h_f. Flack: viscosity rises and
+        evaporation slows as the film concentrates (depth-averaged; no shear thinning, no depth profile).</div>
+    </div>
+    <div id="group-emslie">
+      <div id="in-h0"></div>
+      <div id="in-time"></div>
     </div>
     <div id="group-advanced" style="display:none">
+      <div class="dropdown">
+        <label class="flabel">Viscosity law</label>
+        <select id="in-visclaw">
+          <option value="exponential" selected>Exponential, k_eta (generic)</option>
+          <option value="flack_table1">Flack Table I (PMMA, measured)</option>
+        </select>
+        <div class="help">The Flack law is the measured zero-shear PMMA/chlorobenzene curve of the 1984 paper
+          (only its shape is used, eta0 still anchors the solution as dispensed). k_eta = 18 is the exponential
+          law that matches it between about 10 and 50 wt%.</div>
+      </div>
       <div id="in-keta"></div>
       <div id="in-nevap"></div>
     </div>
@@ -131,7 +144,7 @@
   </fieldset>
 
   <fieldset>
-    <legend>Resin Presets</legend>
+    <legend>Parameter Presets</legend>
     <div class="row">
       <select id="preset-select" style="flex:1"></select>
       <button id="preset-load">Load</button>
@@ -142,8 +155,8 @@
     </div>
     <input class="text" id="preset-notes" placeholder="Note (optional, e.g. source/calibration date)" style="margin-top:8px">
     <div class="status-line" id="preset-status"></div>
-    <div class="help" style="margin-top:8px">Presets store material properties (viscosity, density, evaporation
-      rate, solids fraction) -- not the spin speed, since that is a per-run process choice, not a material
+    <div class="help" style="margin-top:8px">Presets store the parameters of a material and model (viscosity, density, evaporation
+      rate, solids fraction, model settings) -- not the spin speed, since that is a per-run process choice, not a material
       property. Saved in this browser (localStorage), not shared with anyone else.</div>
   </fieldset>
 
@@ -189,6 +202,10 @@
       <div id="in-sig-density"></div>
       <div id="in-sig-evap"></div>
       <div id="in-sig-c0"></div>
+      <div id="in-sig-h0"></div>
+      <div id="in-sig-time"></div>
+      <div id="in-sig-keta"></div>
+      <div id="in-sig-nevap"></div>
     </div>
   </fieldset>
 
@@ -239,7 +256,7 @@ function validate(p) {
   return null;
 }
 
-// Eq. 2/3 (see src/model/compute.py for the full derivation and references)
+// Eq. 2/3 (see src/model/meyerhofer.py for the full derivation and references)
 function compute(p) {
   const err = validate(p);
   if (err) throw new Error(err);
@@ -264,8 +281,19 @@ function thicknessNm(rpm, viscCp, densGcm3, eUmS, c0) {
   return compute(fromLabUnits(rpm, viscCp, densGcm3, eUmS, c0)).finalThicknessNm;
 }
 
+// Emslie-Bonner-Peck (1958), Eq. 3 of the Ossila guide: wet thickness after time t, no evaporation
+function emslieThicknessNm(rpm, viscCp, densGcm3, h0Um, timeS) {
+  const w = rpm * RPM_TO_RAD_S, eta = viscCp * CP_TO_PA_S, rho = densGcm3 * G_CM3_TO_KG_M3, h0 = h0Um * UM_S_TO_M_S;
+  if (!(w > 0 && eta > 0 && rho > 0 && h0 > 0)) throw new Error("Spin speed, viscosity, density and initial thickness must be > 0.");
+  if (!(timeS >= 0)) throw new Error("Spin time must be >= 0.");
+  return h0 / Math.sqrt(1 + (4 * rho * w * w * h0 * h0 * timeS) / (3 * eta)) * M_TO_NM;
+}
+
+// One entry point for all three models. lab.rpmRef is the speed E is specified at (E scales away from it).
 function thicknessAtRpm(lab, rpm) {
-  const e = evaporationAt(lab.evaporationUmS, lab.rpm, rpm, lab.eScaling);
+  if (lab.model === "emslie") return emslieThicknessNm(rpm, lab.viscosityCp, lab.densityGcm3, lab.h0Um, lab.timeS);
+  const e = evaporationAt(lab.evaporationUmS, lab.rpmRef === undefined ? lab.rpm : lab.rpmRef, rpm, lab.eScaling);
+  if (lab.model === "flack") return advThicknessNm(Object.assign({}, lab, { rpm }), e);
   return thicknessNm(rpm, lab.viscosityCp, lab.densityGcm3, e, lab.solidsFraction);
 }
 
@@ -282,30 +310,47 @@ function spinCurve(lab, rpmMin, rpmMax, points) {
 }
 
 // -- deviation: analytic Gauss propagation (mirrors src/model/deviation.py) --
-function relSigma(sigma, value) { return (value === 0 || sigma === 0) ? 0 : Math.abs(sigma / value); }
+const SIGMA_KEYS = ["rpm", "viscosityCp", "densityGcm3", "evaporationUmS", "solidsFraction", "h0Um", "timeS", "kEta", "nEvap"];
 
-function relativeSigmaAnalytic(lab, sig, rpm) {
+function activeKeys(lab) {
+  if (lab.model === "emslie") return ["rpm", "viscosityCp", "densityGcm3", "h0Um", "timeS"];
+  const base = ["rpm", "viscosityCp", "densityGcm3", "evaporationUmS", "solidsFraction"];
+  if (lab.model !== "flack") return base;
+  return base.concat(lab.viscLaw === "flack_table1" ? ["nEvap"] : ["kEta", "nEvap"]);
+}
+
+function clampKey(k, x) {
+  if (k === "solidsFraction") return Math.min(Math.max(x, 1e-6), 0.999999);
+  if (k === "timeS" || k === "kEta" || k === "nEvap") return Math.max(x, 0);
+  return Math.max(x, 1e-9);
+}
+
+// Absolute 1-sigma [nm] from first-order propagation; the partial derivatives are central differences
+// (mirrors src/model/deviation.py, which also differentiates numerically for the Flack model).
+function sigmaAnalyticNm(lab, sig, rpm) {
   rpm = rpm === undefined ? lab.rpm : rpm;
-  const c = lab.solidsFraction;
-  const aRpm = lab.eScaling === "sqrt" ? 0.5 : 2 / 3;
-  const aC = 1 + c / (3 * (1 - c));
-  const terms = [
-    [aC, relSigma(sig.solidsFraction, c)],
-    [1 / 3, relSigma(sig.viscosityCp, lab.viscosityCp)],
-    [1 / 3, relSigma(sig.evaporationUmS, lab.evaporationUmS)],
-    [1 / 3, relSigma(sig.densityGcm3, lab.densityGcm3)],
-    [aRpm, relSigma(sig.rpm, rpm)],
-  ];
-  return Math.sqrt(terms.reduce((s, [a, r]) => s + (a * r) ** 2, 0));
+  let sum = 0;
+  for (const k of activeKeys(lab)) {
+    const s = sig[k] || 0;
+    if (!(s > 0)) continue;
+    const x = k === "rpm" ? rpm : lab[k];
+    let d = Math.max(Math.abs(x) * 1e-3, 1e-9);
+    if (k === "solidsFraction") d = Math.min(d, x * 0.5, (1 - x) * 0.5);
+    const lo = clampKey(k, x - d), hi = clampKey(k, x + d);
+    const f = v => k === "rpm" ? thicknessAtRpm(lab, v) : thicknessAtRpm(Object.assign({}, lab, { [k]: v }), rpm);
+    const deriv = (f(hi) - f(lo)) / (hi - lo);
+    sum += (deriv * s) ** 2;
+  }
+  return Math.sqrt(sum);
 }
 
 function propagateAnalytic(lab, sig, nominalNm) {
-  const rel = relativeSigmaAnalytic(lab, sig);
-  return { meanNm: nominalNm, sigmaNm: nominalNm * rel, relativeSigma: rel };
+  const sigmaNm = sigmaAnalyticNm(lab, sig);
+  return { meanNm: nominalNm, sigmaNm, relativeSigma: nominalNm > 0 ? sigmaNm / nominalNm : 0 };
 }
 
 function analyticBand(lab, sig, curve) {
-  return curve.map(([rpm, h]) => { const s = h * relativeSigmaAnalytic(lab, sig, rpm); return [h - s, h + s]; });
+  return curve.map(([rpm, h]) => { const s = sigmaAnalyticNm(lab, sig, rpm); return [h - s, h + s]; });
 }
 
 // -- deviation: Monte Carlo (mirrors src/model/deviation.py) -----------------
@@ -334,18 +379,17 @@ function unitDraws(kind, n, seed) {
   const triangular = () => { const u = rnd(); return u < 0.5 ? (Math.sqrt(u / 2) * 2 - 1) : (1 - Math.sqrt((1 - u) / 2) * 2); };
   const draw = kind === "gauss" ? gauss : kind === "uniform" ? () => rnd() * 2 - 1 : triangular;
   const out = [];
-  for (let i = 0; i < n; i++) out.push([draw(), draw(), draw(), draw(), draw()]);
+  for (let i = 0; i < n; i++) out.push(Array.from({ length: SIGMA_KEYS.length }, draw));
   return out;
 }
 
 function sampleThickness(lab, sig, u, rpmNominal) {
-  const rpm = Math.max(rpmNominal + sig.rpm * u[0], 1e-6);
-  const eta = Math.max(lab.viscosityCp + sig.viscosityCp * u[1], 1e-9);
-  const rho = Math.max(lab.densityGcm3 + sig.densityGcm3 * u[2], 1e-9);
-  const eParam = Math.max(lab.evaporationUmS + sig.evaporationUmS * u[3], 1e-9);
-  const c = Math.min(Math.max(lab.solidsFraction + sig.solidsFraction * u[4], 1e-6), 0.999999);
-  const e = lab.eScaling === "sqrt" ? eParam * Math.sqrt(rpm / lab.rpm) : eParam;
-  return thicknessNm(rpm, eta, rho, e, c);
+  const l = Object.assign({}, lab);
+  SIGMA_KEYS.forEach((k, i) => {
+    if (k !== "rpm" && (sig[k] || 0) > 0) l[k] = clampKey(k, lab[k] + sig[k] * u[i]);
+  });
+  const rpm = Math.max(rpmNominal + (sig.rpm || 0) * u[0], 1e-6);
+  return thicknessAtRpm(l, rpm);
 }
 
 function percentile(sorted, p) { return sorted[Math.min(Math.floor(p * sorted.length), sorted.length - 1)]; }
@@ -370,7 +414,7 @@ function monteCarloBand(lab, sig, kind, rpms, n, seed) {
 
 // ============================================================================
 // ADVANCED MODEL -- concentration-dependent viscosity & evaporation, solved
-// by direct numerical integration. Mirrors src/model/advanced.py exactly
+// by direct numerical integration. Mirrors src/model/flack.py
 // (see that file's docstring for the physics, references, and honest
 // limitations -- this is NOT a literal port of Flack (1984) or Bornside
 // (1989); it is Meyerhofer's own general Eq. 1, integrated numerically with
@@ -379,13 +423,23 @@ function monteCarloBand(lab, sig, kind, rpms, n, seed) {
 // ============================================================================
 const SOLVENT_DEPLETION_TOL = 1e-7;
 
-function advEta(phi, eta0, kEta) { return eta0 * Math.exp(kEta * phi); }
+// Flack et al. (1984), Table I: zero-shear viscosity of PMMA/chlorobenzene, w = polymer weight fraction
+const PAPER_ETA_REF = 7.06e6, PAPER_ETA_SOLVENT = 0.0008; // Pa s
+function paperEta(w) {
+  w = Math.min(Math.max(w, 1e-9), 1);
+  const c = 1 - w;
+  return PAPER_ETA_REF * Math.exp(-c / (0.043 + 0.040 * c)) * Math.pow(w, 2.33) + PAPER_ETA_SOLVENT;
+}
+// eta(phi) / eta(C0): 1 at the dispensed concentration
+function viscosityFactor(phi, c0, kEta, law) {
+  return law === "flack_table1" ? paperEta(phi) / paperEta(c0) : Math.exp(kEta * (phi - c0));
+}
 function advEvap(phi, e0, nEvap) { return nEvap > 0 ? e0 * Math.pow(Math.max(1 - phi, 0), nEvap) : e0; }
 
 function advDerivatives(q, s, p) {
   const h = q + s;
   const phi = h > 0 ? q / h : 1.0;
-  const eta = advEta(phi, p.eta0, p.kEta);
+  const eta = p.eta0 * viscosityFactor(phi, p.phi0, p.kEta, p.viscLaw);
   const qFlow = (2 * p.rho * p.omega ** 2 * h ** 3) / (3 * eta);
   const dq = -phi * qFlow;
   const ds = -(1 - phi) * qFlow - advEvap(phi, p.e0, p.nEvap);
@@ -457,44 +511,14 @@ function advSimulate(p, headroom = 20, maxSteps = 4000, relTol = 1e-7) {
   return { finalThickness: q, finalPhi: (q + s) > 0 ? q / (q + s) : 1.0, steps, converged };
 }
 
-function advThicknessNm(lab, kEta, nEvap) {
+function advThicknessNm(lab, eUmS) {
+  if (!(lab.kEta >= 0)) throw new Error("Viscosity growth k_eta must be >= 0.");
+  if (!(lab.nEvap >= 0)) throw new Error("Evaporation slowdown n must be >= 0.");
   const p = { omega: lab.rpm * Math.PI / 30, eta0: lab.viscosityCp * 1e-3, rho: lab.densityGcm3 * 1e3,
-             e0: lab.evaporationUmS * 1e-6, phi0: lab.solidsFraction, kEta, nEvap };
-  return advSimulate(p).finalThickness * 1e9;
-}
-
-function advSpinCurve(lab, kEta, nEvap, rpmMin, rpmMax, points) {
-  if (!(rpmMin > 0 && rpmMin < rpmMax)) throw new Error("Plot range needs 0 < min < max.");
-  points = Math.max(points, 2);
-  const ratio = Math.pow(rpmMax / rpmMin, 1 / (points - 1));
-  const out = [];
-  for (let i = 0; i < points; i++) {
-    const rpm = rpmMin * Math.pow(ratio, i);
-    const e = evaporationAt(lab.evaporationUmS, lab.rpm, rpm, lab.eScaling);
-    out.push([rpm, advThicknessNm({ rpm, viscosityCp: lab.viscosityCp, densityGcm3: lab.densityGcm3,
-                                    evaporationUmS: e, solidsFraction: lab.solidsFraction, eScaling: lab.eScaling },
-                                  kEta, nEvap)]);
-  }
-  return out;
-}
-
-function advPropagateMonteCarlo(lab, sig, kEta, nEvap, kind, n, seed) {
-  if (n < 2) throw new Error("Monte Carlo needs at least 2 samples.");
-  const draws = unitDraws(kind, n, seed);
-  const samples = draws.map(u => {
-    const rpm = Math.max(lab.rpm + sig.rpm * u[0], 1e-6);
-    const eta = Math.max(lab.viscosityCp + sig.viscosityCp * u[1], 1e-9);
-    const rho = Math.max(lab.densityGcm3 + sig.densityGcm3 * u[2], 1e-9);
-    const eParam = Math.max(lab.evaporationUmS + sig.evaporationUmS * u[3], 1e-9);
-    const c = Math.min(Math.max(lab.solidsFraction + sig.solidsFraction * u[4], 1e-6), 0.999999);
-    const e = lab.eScaling === "sqrt" ? eParam * Math.sqrt(rpm / lab.rpm) : eParam;
-    return advThicknessNm({ rpm, viscosityCp: eta, densityGcm3: rho, evaporationUmS: e, solidsFraction: c,
-                           eScaling: lab.eScaling }, kEta, nEvap);
-  }).sort((a, b) => a - b);
-  const mean = samples.reduce((a, b) => a + b, 0) / n;
-  const variance = samples.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
-  return { n, meanNm: mean, stdNm: Math.sqrt(variance), p05Nm: percentile(samples, 0.05),
-    p50Nm: percentile(samples, 0.5), p95Nm: percentile(samples, 0.95) };
+              e0: eUmS * 1e-6, phi0: lab.solidsFraction, kEta: lab.kEta, nEvap: lab.nEvap, viscLaw: lab.viscLaw };
+  const r = advSimulate(p);
+  if (!r.converged) throw new Error("Integration did not converge (solvent never fully depleted) -- try a smaller n or check the inputs.");
+  return r.finalThickness * 1e9;
 }
 
 // LOGIC_END
@@ -598,12 +622,16 @@ F.weight = makeField($("in-weight"), "Solids weight fraction w [%]", 10.0, 0.1, 
   "Mass of solute divided by total solution mass -- usually what a datasheet gives ('20 wt% solution').", 140);
 F.dsolute = makeField($("in-dsolute"), "Solute density (pure) [g/cm3]", 1.2, 0.1, 10.0, fmt(3), markDirty, null, 140);
 F.dsolvent = makeField($("in-dsolvent"), "Solvent density (pure) [g/cm3]", 0.9, 0.1, 3.0, fmt(3), markDirty, null, 140);
-F.kEta = makeField($("in-keta"), "Viscosity growth k_eta", 5.0, 0, 30, fmt(2), markDirty,
-  "eta(phi) = eta0 * exp(k_eta * phi): how sharply viscosity rises as the solute concentration phi grows. " +
-  "0 = constant viscosity. Generic/illustrative -- calibrate against your own viscosity-vs-concentration data.", 140);
+F.kEta = makeField($("in-keta"), "Viscosity growth k_eta", 18.0, 0, 30, fmt(2), markDirty,
+  "eta(phi) = eta0 * exp(k_eta * (phi - c0)): how sharply viscosity rises as the solute fraction phi grows. " +
+  "0 = constant viscosity; about 18 matches the PMMA curve of the Flack paper (10-50 wt%). Calibrate against your own data.", 140);
 F.nEvap = makeField($("in-nevap"), "Evaporation slowdown n", 1.0, 0, 6, fmt(2), markDirty,
   "E(phi) = E0 * (1 - phi)^n: how sharply evaporation slows as solvent depletes. 0 = stays at E0 until the " +
   "solvent is fully gone. Generic/illustrative, same caveat as above.", 140);
+F.h0 = makeField($("in-h0"), "Initial wet thickness h0 [um]", 100, 1, 1000, fmt(1), markDirty,
+  "Wet film thickness at the start of the thinning step (Emslie model only).", 140);
+F.time = makeField($("in-time"), "Spin time t [s]", 30, 0, 300, fmt(1), markDirty,
+  "Duration of the constant-speed thinning step (Emslie model only).", 140);
 F.plotMin = makeField($("in-plotmin"), "", 500, 50, 20000, fmt(0), markDirty, null, 80);
 F.plotMax = makeField($("in-plotmax"), "", 8000, 50, 20000, fmt(0), markDirty, null, 80);
 F.mcN = makeField($("in-mcn"), "Number of samples", 2000, 100, 20000, fmt(0), markDirty, null, 140);
@@ -611,6 +639,10 @@ F.sigRpm = makeField($("in-sig-rpm"), "+/- Spin speed [rpm]", 0, 0, 2000, fmt(1)
 F.sigVisc = makeField($("in-sig-visc"), "+/- Viscosity [cP]", 0, 0, 1000, fmt(2), markDirty, null, 140);
 F.sigDensity = makeField($("in-sig-density"), "+/- Density [g/cm3]", 0, 0, 1, fmt(3), markDirty, null, 140);
 F.sigEvap = makeField($("in-sig-evap"), "+/- Evaporation rate [um/s]", 0, 0, 5, fmt(4), markDirty, null, 140);
+F.sigH0 = makeField($("in-sig-h0"), "+/- Initial thickness h0 [um]", 0, 0, 100, fmt(2), markDirty, null, 140);
+F.sigTime = makeField($("in-sig-time"), "+/- Spin time [s]", 0, 0, 30, fmt(2), markDirty, null, 140);
+F.sigKeta = makeField($("in-sig-keta"), "+/- Viscosity growth k_eta", 0, 0, 10, fmt(2), markDirty, null, 140);
+F.sigNevap = makeField($("in-sig-nevap"), "+/- Evaporation slowdown n", 0, 0, 3, fmt(2), markDirty, null, 140);
 F.sigC0 = makeField($("in-sig-c0"), "+/- Solids fraction [pp]", 0, 0, 20, fmt(3), markDirty,
   "Only reflects the uncertainties entered here -- not the systematic model error of the Meyerhofer model " +
   "itself (roughly \u00b110-20%, see README).", 140);
@@ -620,37 +652,48 @@ F.sigC0 = makeField($("in-sig-c0"), "+/- Solids fraction [pp]", 0, 0, 20, fmt(3)
 // ============================================================================
 $("in-mode").addEventListener("change", () => { onModeChange(); recompute(); });
 $("in-method").addEventListener("change", () => { onMethodChange(); recompute(); });
-$("in-physics").addEventListener("change", () => { onPhysicsChange(); recompute(); });
+$("in-model").addEventListener("change", () => { onModelChange(); recompute(); });
+$("in-visclaw").addEventListener("change", () => { updateLawVisibility(); recompute(); });
 $("in-escaling").addEventListener("change", recompute);
 $("in-mcdist").addEventListener("change", recompute);
 $("in-showband").addEventListener("change", recompute);
-$("mc-run").addEventListener("click", runAdvancedMonteCarlo);
+$("mc-run").addEventListener("click", runFlackMonteCarlo);
 
-function isAdvanced() { return $("in-physics").value === "advanced"; }
+function currentModel() { return $("in-model").value; }
+function show(el, on) { el.style.display = on ? "" : "none"; }
 
 function onModeChange() {
   const weight = $("in-mode").value === "weight";
-  $("group-direct").style.display = weight ? "none" : "";
-  $("group-weight").style.display = weight ? "" : "none";
+  show($("group-direct"), !weight);
+  show($("group-weight"), weight);
 }
-function onPhysicsChange() {
-  const adv = isAdvanced();
-  $("group-advanced").style.display = adv ? "" : "none";
-  const gaussOpt = $("in-method").querySelector('option[value="gauss"]');
-  gaussOpt.disabled = adv;
-  if (adv && $("in-method").value === "gauss") $("in-method").value = "none";
-  $("in-showband").disabled = adv;
-  if (adv) $("in-showband").checked = false; else $("in-showband").checked = true;
+function updateLawVisibility() {
+  const paper = $("in-visclaw").value === "flack_table1";
+  const fl = currentModel() === "flack";
+  show($("in-keta"), !paper);
+  show($("in-sig-keta"), fl && !paper);
+}
+function onModelChange() {
+  const m = currentModel(), em = m === "emslie", fl = m === "flack";
+  show($("group-emslie"), em);
+  show($("group-advanced"), fl);
+  [$("in-evap"), $("in-escaling").parentElement, $("in-mode").parentElement].forEach(e => show(e, !em));
+  onModeChange();
+  if (em) { show($("group-direct"), false); show($("group-weight"), false); }
+  show($("in-sig-evap"), !em); show($("in-sig-c0"), !em);
+  show($("in-sig-h0"), em); show($("in-sig-time"), em);
+  show($("in-sig-nevap"), fl);
+  updateLawVisibility();
   onMethodChange();
 }
 function onMethodChange() {
   const method = $("in-method").value;
-  const adv = isAdvanced();
-  $("group-unc").style.display = method === "none" ? "none" : "";
-  $("group-mc").style.display = method === "mc" ? "" : "none";
-  const advMc = method === "mc" && adv;
-  $("group-mc-run").style.display = advMc ? "" : "none";
-  if (advMc) {
+  const fl = currentModel() === "flack";
+  show($("group-unc"), method !== "none");
+  show($("group-mc"), method === "mc");
+  const flMc = method === "mc" && fl;
+  show($("group-mc-run"), flMc);
+  if (flMc) {
     $("out-stat1").textContent = "Click \"Run Monte Carlo\" below for deviation stats.";
     $("out-stat2").textContent = ""; $("out-stat3").textContent = "";
     F.mcN.set(300, false);
@@ -658,8 +701,7 @@ function onMethodChange() {
     F.mcN.set(2000, false);
   }
 }
-onModeChange();
-onPhysicsChange();
+onModelChange();
 
 // ============================================================================
 // Debounce (mirrors app.py's DEBOUNCE_MS)
@@ -678,39 +720,30 @@ function solidsFraction() {
   return volumeFractionFromWeightFraction(F.weight.get() / 100, F.dsolute.get(), F.dsolvent.get());
 }
 function labInput(c0) {
-  return { rpm: F.rpm.get(), viscosityCp: F.visc.get(), densityGcm3: F.density.get(),
-    evaporationUmS: F.evap.get(), solidsFraction: c0, eScaling: $("in-escaling").value };
+  return { model: currentModel(), rpm: F.rpm.get(), rpmRef: F.rpm.get(), viscosityCp: F.visc.get(),
+    densityGcm3: F.density.get(), evaporationUmS: F.evap.get(), solidsFraction: c0, eScaling: $("in-escaling").value,
+    h0Um: F.h0.get(), timeS: F.time.get(), kEta: F.kEta.get(), nEvap: F.nEvap.get(), viscLaw: $("in-visclaw").value };
 }
 function sigmas() {
   return { rpm: F.sigRpm.get(), viscosityCp: F.sigVisc.get(), densityGcm3: F.sigDensity.get(),
-    evaporationUmS: F.sigEvap.get(), solidsFraction: F.sigC0.get() / 100 };
+    evaporationUmS: F.sigEvap.get(), solidsFraction: F.sigC0.get() / 100, h0Um: F.sigH0.get(), timeS: F.sigTime.get(),
+    kEta: F.sigKeta.get(), nEvap: F.sigNevap.get() };
 }
-function sigmasAny(s) { return s.rpm > 0 || s.viscosityCp > 0 || s.densityGcm3 > 0 || s.evaporationUmS > 0 || s.solidsFraction > 0; }
+function sigmasAny(s, lab) { return activeKeys(lab).some(k => (s[k] || 0) > 0); }
 
 // ============================================================================
 // Recompute: result panel + plot
 // ============================================================================
 function recompute() {
   debounceId = null;
-  const adv = isAdvanced();
-  const advMc = adv && $("in-method").value === "mc";
-  if (!advMc) {
-    $("out-stat1").textContent = ""; $("out-stat2").textContent = ""; $("out-stat3").textContent = "";
-  }
+  const model = currentModel();
+  const flMc = model === "flack" && $("in-method").value === "mc";
+  if (!flMc) { $("out-stat1").textContent = ""; $("out-stat2").textContent = ""; $("out-stat3").textContent = ""; }
   let c0, lab, finalNm;
   try {
-    c0 = solidsFraction();
+    c0 = model === "emslie" ? 0.1 : solidsFraction();
     lab = labInput(c0);
-    if (adv) {
-      const advResult = advSimulate({ omega: lab.rpm * Math.PI / 30, eta0: lab.viscosityCp * 1e-3,
-        rho: lab.densityGcm3 * 1e3, e0: lab.evaporationUmS * 1e-6, phi0: c0,
-        kEta: F.kEta.get(), nEvap: F.nEvap.get() });
-      if (!advResult.converged) throw new Error("Integration did not converge (solvent never fully " +
-        "depleted) -- try a smaller n_evap or check the inputs.");
-      finalNm = advResult.finalThickness * 1e9;
-    } else {
-      finalNm = compute(fromLabUnits(lab.rpm, lab.viscosityCp, lab.densityGcm3, lab.evaporationUmS, c0)).finalThicknessNm;
-    }
+    finalNm = thicknessAtRpm(lab, lab.rpm);
   } catch (e) {
     $("out-main").textContent = "--";
     $("out-main").className = "result-big error";
@@ -720,73 +753,69 @@ function recompute() {
   }
   $("out-main").className = "result-big";
   $("out-main").textContent = finalNm.toLocaleString(undefined, { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + " nm";
-  $("out-caption").textContent = `(${(finalNm / 1000).toFixed(3)} \u00b5m)`;
-  if (adv) {
-    $("out-transition").textContent = `Model: Advanced (k_eta=${F.kEta.get().toFixed(2)}, n_evap=${F.nEvap.get().toFixed(2)})`;
-    $("out-omega").textContent = `Omega used: ${(lab.rpm * Math.PI / 30).toFixed(1)} rad/s`;
+  const what = model === "emslie" ? "wet film thickness after the spin time" : "final dry film thickness";
+  $("out-caption").textContent = `(${(finalNm / 1000).toFixed(3)} \u00b5m)  ${what}`;
+  const omega = (lab.rpm * Math.PI / 30).toFixed(1);
+  if (model === "emslie") {
+    $("out-transition").textContent = `Spin time t = ${lab.timeS.toFixed(1)} s, h0 = ${lab.h0Um.toFixed(1)} \u00b5m`;
+    $("out-c0").textContent = "";
+  } else if (model === "flack") {
+    const law = lab.viscLaw === "flack_table1" ? "Flack Table I (PMMA)" : `exponential, k_eta = ${lab.kEta.toFixed(2)}`;
+    $("out-transition").textContent = `Flack depth-averaged: viscosity ${law}, n = ${lab.nEvap.toFixed(2)}`;
+    $("out-c0").textContent = `Volume fraction c0 used: ${(c0 * 100).toFixed(2)} %`;
   } else {
     const result = compute(fromLabUnits(lab.rpm, lab.viscosityCp, lab.densityGcm3, lab.evaporationUmS, c0));
     $("out-transition").textContent = `Wet transition thickness h_s: ${result.transitionThicknessUm.toFixed(3)} \u00b5m`;
-    $("out-omega").textContent = `Omega used: ${result.omega.toFixed(1)} rad/s`;
+    $("out-c0").textContent = `Volume fraction c0 used: ${(c0 * 100).toFixed(2)} %`;
   }
-  $("out-c0").textContent = `Volume fraction c0 used: ${(c0 * 100).toFixed(2)} %`;
+  $("out-omega").textContent = `Omega used: ${omega} rad/s`;
 
   const rpmMin = F.plotMin.get(), rpmMax = F.plotMax.get();
   const method = $("in-method").value;
   let curve = [], band = null;
   try {
     if (rpmMin < rpmMax) {
-      if (adv) {
-        curve = advSpinCurve(lab, F.kEta.get(), F.nEvap.get(), rpmMin, rpmMax, 60);
-      } else {
-        curve = spinCurve(lab, rpmMin, rpmMax, 60);
-        if (method !== "none" && $("in-showband").checked) {
-          const sig = sigmas();
-          if (sigmasAny(sig)) {
-            if (method === "gauss") band = analyticBand(lab, sig, curve);
-            else band = monteCarloBand(lab, sig, $("in-mcdist").value, curve.map(p => p[0]), 800, 12345);
-          }
+      curve = spinCurve(lab, rpmMin, rpmMax, 60);
+      if (method !== "none" && !flMc && $("in-showband").checked) {
+        const sig = sigmas();
+        if (sigmasAny(sig, lab)) {
+          band = method === "gauss" ? analyticBand(lab, sig, curve)
+            : monteCarloBand(lab, sig, $("in-mcdist").value, curve.map(p => p[0]), 800, 12345);
         }
       }
     }
   } catch (e) { curve = []; }
   drawPlot(curve, band, [lab.rpm, finalNm], true);
 
-  if (method === "none" || advMc) {
-    return;
-  }
+  if (method === "none" || flMc) return;
   try {
     const sig = sigmas();
     if (method === "gauss") {
       const a = propagateAnalytic(lab, sig, finalNm);
-      $("out-stat1").textContent = `h_f = ${a.meanNm.toFixed(1)} +/- ${a.sigmaNm.toFixed(1)} nm  (1 sigma, Gauss)`;
+      $("out-stat1").textContent = `h = ${a.meanNm.toFixed(1)} +/- ${a.sigmaNm.toFixed(1)} nm  (1 sigma, Gauss)`;
       $("out-stat2").textContent = `relative uncertainty: ${(a.relativeSigma * 100).toFixed(1)} %`;
       $("out-stat3").textContent = `~95% range (+/-2 sigma): ${(a.meanNm - 2 * a.sigmaNm).toFixed(1)} - ${(a.meanNm + 2 * a.sigmaNm).toFixed(1)} nm`;
     } else {
-      const n = Math.round(F.mcN.get());
-      const mc = propagateMonteCarlo(lab, sig, $("in-mcdist").value, n, 12345);
-      $("out-stat1").textContent = `h_f = ${mc.meanNm.toFixed(1)} nm  (Monte Carlo, n = ${mc.n})`;
-      $("out-stat2").textContent = `standard deviation: ${mc.stdNm.toFixed(1)} nm`;
-      $("out-stat3").textContent = `P05 / P50 / P95: ${mc.p05Nm.toFixed(1)} / ${mc.p50Nm.toFixed(1)} / ${mc.p95Nm.toFixed(1)} nm`;
+      showMc(propagateMonteCarlo(lab, sig, $("in-mcdist").value, Math.round(F.mcN.get()), 12345));
     }
   } catch (e) { $("out-stat1").textContent = "! " + e.message; }
 }
 
-function runAdvancedMonteCarlo() {
-  if (!(isAdvanced() && $("in-method").value === "mc")) return;
+function showMc(mc) {
+  $("out-stat1").textContent = `h = ${mc.meanNm.toFixed(1)} nm  (Monte Carlo, n = ${mc.n})`;
+  $("out-stat2").textContent = `standard deviation: ${mc.stdNm.toFixed(1)} nm`;
+  $("out-stat3").textContent = `P05 / P50 / P95: ${mc.p05Nm.toFixed(1)} / ${mc.p50Nm.toFixed(1)} / ${mc.p95Nm.toFixed(1)} nm`;
+}
+
+function runFlackMonteCarlo() {
+  if (!(currentModel() === "flack" && $("in-method").value === "mc")) return;
   $("out-stat1").textContent = "Running...";
-  setTimeout(() => {
+  setTimeout(() => {   // small delay so "Running..." paints before the blocking computation
     try {
-      const c0 = solidsFraction();
-      const lab = labInput(c0);
-      const sig = sigmas();
-      const n = Math.round(F.mcN.get());
-      const mc = advPropagateMonteCarlo(lab, sig, F.kEta.get(), F.nEvap.get(), $("in-mcdist").value, n, 12345);
-      $("out-stat1").textContent = `h_f = ${mc.meanNm.toFixed(1)} nm  (Monte Carlo, n = ${mc.n})`;
-      $("out-stat2").textContent = `standard deviation: ${mc.stdNm.toFixed(1)} nm`;
-      $("out-stat3").textContent = `P05 / P50 / P95: ${mc.p05Nm.toFixed(1)} / ${mc.p50Nm.toFixed(1)} / ${mc.p95Nm.toFixed(1)} nm`;
+      const lab = labInput(solidsFraction());
+      showMc(propagateMonteCarlo(lab, sigmas(), $("in-mcdist").value, Math.round(F.mcN.get()), 12345));
     } catch (e) { $("out-stat1").textContent = "! " + e.message; }
-  }, 10); // small delay so "Running..." actually paints before the (blocking) computation
+  }, 10);
 }
 
 // ============================================================================
@@ -863,11 +892,11 @@ function drawPlot(points, band, marker, logX) {
 // ============================================================================
 const PRESET_KEY = "spincoating_presets_v1";
 const BUILTIN_PRESETS = [
-  { name: "Example - high-viscosity resin (placeholder)", viscosityCp: 120.0, densityGcm3: 1.05,
+  { name: "Example - high-viscosity (placeholder)", viscosityCp: 120.0, densityGcm3: 1.05,
     evaporationRateUmS: 0.05, concentrationMode: "weight", weightPct: 25.0, densitySoluteGcm3: 1.2,
     densitySolventGcm3: 0.9,
     notes: "Placeholder values for orientation, not datasheet values -- calibrate against your own measurements (ellipsometry/profilometry) before use." },
-  { name: "Example - low-viscosity resin (placeholder)", viscosityCp: 5.0, densityGcm3: 0.95,
+  { name: "Example - low-viscosity (placeholder)", viscosityCp: 5.0, densityGcm3: 0.95,
     evaporationRateUmS: 0.15, concentrationMode: "direct", solidsPct: 5.0,
     notes: "Placeholder values for orientation, not datasheet values -- calibrate against your own measurements (ellipsometry/profilometry) before use." },
 ];
@@ -894,6 +923,13 @@ function refreshPresetSelect(selectName) {
 refreshPresetSelect();
 
 function applyPreset(p) {
+  if (p.model) $("in-model").value = p.model;
+  if (p.eScaling) $("in-escaling").value = p.eScaling;
+  if (p.viscLaw) $("in-visclaw").value = p.viscLaw;
+  if (p.kEta !== undefined) F.kEta.set(p.kEta, false);
+  if (p.nEvap !== undefined) F.nEvap.set(p.nEvap, false);
+  if (p.h0Um !== undefined) F.h0.set(p.h0Um, false);
+  if (p.timeS !== undefined) F.time.set(p.timeS, false);
   F.visc.set(p.viscosityCp, false);
   F.density.set(p.densityGcm3, false);
   F.evap.set(p.evaporationRateUmS, false);
@@ -906,7 +942,7 @@ function applyPreset(p) {
     $("in-mode").value = "direct";
     F.c0.set(p.solidsPct ?? 10.0, false);
   }
-  onModeChange();
+  onModelChange();
   recompute();
 }
 
@@ -927,7 +963,8 @@ $("preset-save").addEventListener("click", () => {
   const mode = $("in-mode").value;
   const preset = {
     name, viscosityCp: F.visc.get(), densityGcm3: F.density.get(), evaporationRateUmS: F.evap.get(),
-    concentrationMode: mode,
+    concentrationMode: mode, model: currentModel(), eScaling: $("in-escaling").value, viscLaw: $("in-visclaw").value,
+    kEta: F.kEta.get(), nEvap: F.nEvap.get(), h0Um: F.h0.get(), timeS: F.time.get(),
     solidsPct: mode === "direct" ? F.c0.get() : undefined,
     weightPct: mode === "weight" ? F.weight.get() : undefined,
     densitySoluteGcm3: mode === "weight" ? F.dsolute.get() : undefined,

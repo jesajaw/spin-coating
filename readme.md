@@ -77,18 +77,19 @@ spin-coating/
 ├── main.py                 # desktop entry point
 ├── src/
 │   ├── settings.py         # app-level defaults (Monte Carlo, plot range, preset location)
-│   ├── store.py            # resin presets (read/write data/*.json)
+│   ├── store.py            # parameter presets (read/write data/*.json)
 │   └── model/
 │       ├── parameters.py   # constants, unit conversions, Input/Result/LabInput/Sigmas
-│       ├── compute.py      # Meyerhofer model (Eq. 2/3), spin_curve()
-│       ├── advanced.py     # concentration-dependent viscosity/evaporation (numerical ODE)
+│       ├── emslie.py       # Emslie-Bonner-Peck h(t)
+│       ├── meyerhofer.py   # Meyerhofer model (Eq. 2/3)
+│       ├── flack.py        # concentration-dependent viscosity/evaporation (numerical ODE)
 │       └── deviation.py    # Gauss propagation + Monte Carlo (both models)
 ├── ui/
 │   ├── app.py               # tkinter main window (3-column layout, live recompute)
 │   ├── widgets.py           # Cell, NumberField, Dropdown, ResultDisplay, SpinCurvePlot
 │   ├── dialogs.py           # themed popups
 │   └── style.py             # theme colors, fonts, ttk styles
-├── data/                    # saved resin presets (JSON, one file each)
+├── data/                    # saved parameter presets (JSON, one file each)
 ├── tests/
 │   └── test_model.py        # sanity tests for src/model (no framework needed)
 ├── LICENSE
@@ -96,8 +97,7 @@ spin-coating/
 
 The `index.html` mirrors `src/model/*.py` line-for-line (see the
 `LOGIC_START`/`LOGIC_END` block in the file) so both versions give the same
-numbers; a random cross-check between the two is what `tests/test_model.py`'s
-Python side is checked against during development.
+numbers. `tests/test_web_matches_python.py` compares both (needs `node`).
 
 ---
 
@@ -123,7 +123,7 @@ This is actually far more complex to do, but I tried implementing some basic tes
 
 ```bash
 python tests/test_model.py
-python tests/test_advanced.py
+python tests/test_store.py
 ```
 for testing.
 

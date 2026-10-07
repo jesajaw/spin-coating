@@ -29,8 +29,6 @@ def _all_tex_strings() -> list[str]:
         out += [spec.label_tex, spec.sigma_label_tex]
     for info in P.MODELS.values():
         out += [f"${info.quantity_tex}$ =", f"${info.quantity_tex}$ [nm]"]
-    for blocks in texts.PHYSICS.values():
-        out += [f"${c}$" for k, c in blocks if k == "tex"]
     out += [f"${f}$" for f in texts.PARAM_FORMULA.values()]
     out += [r"$\omega_\mathrm{min}$ [rpm]", r"Solids fraction $C_0$ from", r"Evaporation rate $E$ vs. spin speed",
             r"Solids weight fraction $w$ [$\%$]", r"$\rightarrow$ $C_0$ = 7.69 % (volume)",
@@ -76,7 +74,6 @@ def test_app_runs_through_all_models_and_methods():
             a._recompute()
             if method == appmod.METHOD_MC and not P.MODELS[model_id].fast:
                 a._on_run_mc()
-        a._open_physics()
         a._open_parameters()
     a._open_presets()
 

@@ -46,6 +46,16 @@ def test_meyerhofer_known_value():
     assert math.isclose(meyerhofer.thickness_nm(vals(P.MODEL_MEYERHOFER)), 256.6, rel_tol=1e-3)
 
 
+def test_meyerhofer_matches_ossila_eq7_with_k_from_the_evaporation_rate():
+    """Ossila Eq. 7 (h_f with E = k sqrt(w)), typed out independently of meyerhofer.py."""
+    for rpm, c0 in ((1000, 0.05), (3000, 0.10), (6000, 0.30)):
+        v = vals(P.MODEL_MEYERHOFER, rpm=rpm, rpm_ref=rpm, solids_fraction=c0, e_scaling=P.E_SQRT)
+        w, eta, rho, e = rpm * math.pi / 30, v["viscosity_cp"] * 1e-3, v["density_g_cm3"] * 1e3, v["evaporation_um_s"] * 1e-6
+        k = e / math.sqrt(w)
+        eq7 = (3 / 2) ** (1 / 3) * k ** (1 / 3) * c0 * (1 - c0) ** (-1 / 3) * rho ** (-1 / 3) * eta ** (1 / 3) / math.sqrt(w)
+        assert math.isclose(meyerhofer.thickness_nm(v), eq7 * 1e9, rel_tol=1e-9)
+
+
 def test_meyerhofer_scaling_exponents():
     for scaling, expected in ((P.E_CONSTANT, -2 / 3), (P.E_SQRT, -0.5)):
         base = vals(P.MODEL_MEYERHOFER, e_scaling=scaling, rpm_ref=3000)
@@ -173,3 +183,19 @@ if __name__ == "__main__":
         fn()
         print(f"ok  {name}")
     print(f"{len(tests)} tests passed.")
+
+
+def test_flack_paper_viscosity_law_is_anchored_and_close_to_k18():
+    """Table I law: factor 1 at C0, monotone rising, and within ~1 % of exp(18 dphi) between 10 and 50 wt%."""
+    assert flack.viscosity_factor(0.1, 0.1, 0.0, P.VISC_PAPER) == 1.0
+    phis = [0.1 + 0.05 * i for i in range(9)]
+    f = [flack.viscosity_factor(x, 0.1, 0.0, P.VISC_PAPER) for x in phis]
+    assert all(b > a for a, b in zip(f, f[1:]))
+    assert math.isclose(f[8], math.exp(18 * 0.4), rel_tol=0.02)
+
+
+def test_flack_paper_law_ignores_k_eta_and_converges():
+    a = flack.thickness_nm(vals(P.MODEL_FLACK, visc_law=P.VISC_PAPER, k_eta=0.0))
+    b = flack.thickness_nm(vals(P.MODEL_FLACK, visc_law=P.VISC_PAPER, k_eta=30.0))
+    assert a == b and a > flack.thickness_nm(vals(P.MODEL_FLACK, k_eta=0.0))
+

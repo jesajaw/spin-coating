@@ -1,5 +1,5 @@
 """
-Resin-presets window. A preset stores everything (model, all parameter values, E(rpm) law, how C0 was entered,
+Parameter-presets window. A preset stores everything (model, all parameter values, E(rpm) law, how C0 was entered,
 uncertainties, note) as JSON via src/store.py.
 
 Left:  list of saved presets (click = load into the editor), Delete.
@@ -28,7 +28,7 @@ class PresetsWindow(tk.Toplevel):
         """
         super().__init__(parent)
         self.configure(bg=style.COLOR_BG)
-        self.title("Resin Presets")
+        self.title("Parameter Presets")
         self.geometry("920x700")
         self.minsize(820, 560)
         self.transient(parent)
@@ -159,7 +159,7 @@ class PresetsWindow(tk.Toplevel):
         if name in store.list_presets() and not dialogs.ask_yes_no(self, "Overwrite preset",
                                                                     f"A preset named '{name}' already exists. Overwrite it?"):
             return
-        preset = store.ResinPreset.from_state(name, self.model_id, self.f_values.get_state(),
+        preset = store.ParameterPreset.from_state(name, self.model_id, self.f_values.get_state(),
                                               self.f_sigmas.get_state(), self.e_notes.get().strip())
         path = store.save_preset(preset)
         self._refresh_list(select=name)

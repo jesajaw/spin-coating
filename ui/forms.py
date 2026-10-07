@@ -23,6 +23,8 @@ CONC_LABELS = {P.CONC_DIRECT: "Volume fraction directly", P.CONC_WEIGHT: "From w
 CONC_LABELS_INV = {v: k for k, v in CONC_LABELS.items()}
 E_LABELS_PLAIN = {P.E_CONSTANT: "Constant (independent of rpm)", P.E_SQRT: "Grows with sqrt(rpm) (Meyerhofer)"}
 E_LABELS_INV = {v: k for k, v in E_LABELS_PLAIN.items()}
+VISC_LABELS = {P.VISC_EXP: "Exponential, k_eta (generic)", P.VISC_PAPER: "Flack Table I (PMMA, measured)"}
+VISC_LABELS_INV = {v: k for k, v in VISC_LABELS.items()}
 
 
 class ParamForm(ttk.Frame):
@@ -62,6 +64,10 @@ class ParamForm(ttk.Frame):
         for key in info.keys:
             if key == "solids_fraction" and self.kind == "values":
                 self._build_concentration()
+            elif key == "k_eta" and self.kind == "values":
+                self._build_visc_law()
+                if self.state.get("visc_law", P.VISC_DEFAULT) != P.VISC_PAPER:     # k_eta is unused under the paper law
+                    self._add_field(key)
             else:
                 self._add_field(key)
             if key == "evaporation_um_s" and self.kind == "values":
@@ -88,6 +94,12 @@ class ParamForm(ttk.Frame):
                                     E_LABELS_PLAIN[self.state.get("e_scaling", P.E_SCALING_DEFAULT)],
                                     on_change=self._e_scaling_changed, width=30)
         self.d_e_scaling.pack(fill="x")
+
+    def _build_visc_law(self) -> None:
+        self.d_visc = Dropdown(self, r"Viscosity law $\eta(\varphi)$", list(VISC_LABELS.values()),
+                               VISC_LABELS[self.state.get("visc_law", P.VISC_DEFAULT)],
+                               on_change=self._visc_law_changed, width=30)
+        self.d_visc.pack(fill="x")
 
     def _build_concentration(self) -> None:
         self.d_conc = Dropdown(self, r"Solids fraction $C_0$ from", list(CONC_LABELS.values()),
@@ -131,6 +143,11 @@ class ParamForm(ttk.Frame):
     def _conc_mode_changed(self, label: str) -> None:
         self.state["conc_mode"] = CONC_LABELS_INV[label]
         P.sync_solids_fraction(self.state)
+        self._rebuild()
+        self._notify()
+
+    def _visc_law_changed(self, label: str) -> None:
+        self.state["visc_law"] = VISC_LABELS_INV[label]
         self._rebuild()
         self._notify()
 

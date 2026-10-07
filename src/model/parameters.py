@@ -60,6 +60,12 @@ E_SQRT = "sqrt"
 E_SCALING_MODES = (E_CONSTANT, E_SQRT)
 E_SCALING_DEFAULT = E_SQRT
 
+# Viscosity law of the Flack model: generic exponential (k_eta) or the measured PMMA law of Flack et al. (1984), Table I
+VISC_EXP = "exponential"
+VISC_PAPER = "flack_table1"
+VISC_MODES = (VISC_EXP, VISC_PAPER)
+VISC_DEFAULT = VISC_EXP
+
 # -- Solids fraction: how c0 is entered -----------------------------------------
 CONC_DIRECT = "direct"     # volume fraction typed in directly
 CONC_WEIGHT = "weight"     # weight fraction + pure-component densities
@@ -137,7 +143,7 @@ PARAMS: dict[str, ParamSpec] = {p.key: p for p in (
               default=10.0, minimum=0.1, maximum=99.0, fmt="%.2f",
               sigma_max=20.0, sigma_fmt="%.3f", scale=0.01, hard_min=1e-6, hard_max=0.999999),
     ParamSpec("k_eta", "Viscosity growth", r"k_\eta", "", "",
-              default=5.0, minimum=0.0, maximum=30.0, fmt="%.2f",
+              default=18.0, minimum=0.0, maximum=30.0, fmt="%.2f",
               sigma_max=10.0, sigma_fmt="%.2f", hard_min=0.0),
     ParamSpec("n_evap", "Evaporation slowdown", r"n", "", "",
               default=1.0, minimum=0.0, maximum=6.0, fmt="%.2f",
@@ -182,7 +188,7 @@ def default_state() -> dict:
     `solids_fraction` is a fraction (0..1); `weight_pct` is in percent.
     """
     state = {k: spec.default * spec.scale for k, spec in PARAMS.items()}
-    state.update(e_scaling=E_SCALING_DEFAULT, conc_mode=CONC_DEFAULT, weight_pct=WEIGHT_PCT_DEFAULT,
+    state.update(e_scaling=E_SCALING_DEFAULT, visc_law=VISC_DEFAULT, conc_mode=CONC_DEFAULT, weight_pct=WEIGHT_PCT_DEFAULT,
                  density_solute_g_cm3=DENSITY_SOLUTE_DEFAULT, density_solvent_g_cm3=DENSITY_SOLVENT_DEFAULT)
     return state
 
@@ -196,6 +202,7 @@ def model_values(state: dict, model_id: str) -> dict:
     """The value dict a physics module expects: only the model's own parameters, plus E-scaling info."""
     v = {k: float(state[k]) for k in MODELS[model_id].keys}
     v["e_scaling"] = state.get("e_scaling", E_SCALING_DEFAULT)
+    v["visc_law"] = state.get("visc_law", VISC_DEFAULT)
     v["rpm_ref"] = v["rpm"]      # the spin speed typed in is the speed E is specified at
     return v
 

@@ -5,6 +5,7 @@ window (main + plot) calls apply_style() once and shares the same style
 names (Cell.TFrame, CellTitle.TLabel, Status.TLabel, ...).
 """
 
+import os
 import sys
 import ctypes
 from dataclasses import dataclass
@@ -12,9 +13,9 @@ from tkinter import ttk
 
 
 _SCHEMES = {
-    "dark_purple": dict(BG="#1e1e24", BG_LIGHT="#2a2a33", FG="#e0dff0", ACCENT="#9b59d9", ACCENT_DARK="#6c3fa0", STATUS_TEXT="#c9a6f5",),
-    "dark_blue": dict(BG="#1e1e24", BG_LIGHT="#2a2a33", FG="#e0dff0", ACCENT="#4a90d9", ACCENT_DARK="#2f5f9e", STATUS_TEXT="#a6c9f5",),
-    "black_white": dict(BG="#000000", BG_LIGHT="#1a1a1a", FG="#ffffff", ACCENT="#ffffff", ACCENT_DARK="#808080", STATUS_TEXT="#d9d9d9",),
+    "dark_purple": dict(BG="#1e1e24", BG_LIGHT="#2a2a33", FG="#e0dff0", ACCENT="#9b59d9", ACCENT_DARK="#6c3fa0", STATUS_TEXT="#c9a6f5", GRID="#3c3c48"),
+    "dark_blue": dict(BG="#1e1e24", BG_LIGHT="#2a2a33", FG="#e0dff0", ACCENT="#4a90d9", ACCENT_DARK="#2f5f9e", STATUS_TEXT="#a6c9f5", GRID="#3c3c48"),
+    "black_white": dict(BG="#000000", BG_LIGHT="#1a1a1a", FG="#ffffff", ACCENT="#ffffff", ACCENT_DARK="#5a5a5a", STATUS_TEXT="#d9d9d9", GRID="#333333"),
 }
 
 _FONT_SCHEMES = {
@@ -22,7 +23,11 @@ _FONT_SCHEMES = {
     "system": dict(UI="TkDefaultFont", MONO="TkFixedFont", SIZE_NORMAL=9, SIZE_HEADER=10, SIZE_TITLE=13),
 }
 
-COLOR_SCHEME = "dark_purple"
+DEFAULT_COLOR_SCHEME = "dark_purple"
+# The scheme can be chosen without editing code: set SPIN_COATING_THEME=dark_blue (or black_white) before starting.
+COLOR_SCHEME = os.environ.get("SPIN_COATING_THEME", DEFAULT_COLOR_SCHEME)
+if COLOR_SCHEME not in _SCHEMES:
+    raise ValueError(f"Unknown theme {COLOR_SCHEME!r} (SPIN_COATING_THEME). Available: {', '.join(_SCHEMES)}")
 FONT_SCHEME = "segoe"
 
 _active = _SCHEMES[COLOR_SCHEME]
@@ -32,6 +37,7 @@ COLOR_FG = _active["FG"]
 COLOR = _active["ACCENT"]
 COLOR_DARK = _active["ACCENT_DARK"]
 COLOR_STATUS_TEXT = _active["STATUS_TEXT"]
+COLOR_GRID = _active["GRID"]
 COLOR_ERROR = "#e06666"
 
 _active_font = _FONT_SCHEMES[FONT_SCHEME]

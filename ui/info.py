@@ -1,8 +1,8 @@
 """
-Two non-modal info windows, both depending on the selected model and refreshed when the model changes:
+Non-modal info window that depends on the selected model and is refreshed when the model changes:
 
-- PhysicsWindow:    the physics of the model (equations, sources) -- first version with placeholders, see texts.py
-- ParametersWindow: what is practically typed into every field of the model
+- ParametersWindow: what is practically typed into every field of the model (meaning, default, range).
+  The physics (equations, sources) lives in the README, not in the app.
 """
 
 from __future__ import annotations
@@ -64,27 +64,6 @@ class _InfoWindow(tk.Toplevel):
         raise NotImplementedError
 
 
-class PhysicsWindow(_InfoWindow):
-    TITLE = "Physics"
-
-    def _fill(self, model_id: str) -> None:
-        first_ref = True
-        for kind, content in texts.PHYSICS[model_id]:
-            if kind == "title":
-                self._heading(content)
-            elif kind == "text":
-                self._paragraph(content)
-            elif kind == "note":
-                self._paragraph(content, "Note.TLabel")
-            elif kind == "tex":
-                self._equation(content)
-            elif kind == "ref":
-                if first_ref:
-                    self._heading("Sources", top=10)
-                    first_ref = False
-                self._paragraph(content)
-
-
 class ParametersWindow(_InfoWindow):
     TITLE = "Parameters"
     SIZE = "720x680"
@@ -95,6 +74,8 @@ class ParametersWindow(_InfoWindow):
         self._paragraph(f"Result: {info.caption}. " + texts.uncertainty_note())
         for key in info.keys:
             spec = P.PARAMS[key]
+            if key == "k_eta":
+                self._extra_block(model_id, "visc_law", r"Viscosity law")
             self._parameter_block(model_id, key, spec)
             if key == "evaporation_um_s":
                 self._extra_block(model_id, "e_scaling", r"Evaporation rate vs. spin speed")
