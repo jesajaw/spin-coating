@@ -1,0 +1,36 @@
+{
+  "version": 2,
+  "name": "AZ 4533 (125 cSt)",
+  "notes": "AZ 4533 (Merck/AZ), thick positive resist. Viscosity 125 cSt (25 C) and spin curve 2000-6000 rpm from the AZ 4500 series data sheet. ESTIMATED: solids content (35 wt %, interpolated by viscosity between the SDS values of AZ 5214 E and AZ 9260) and density (from the component densities). E (at 3000 rpm) is calibrated to the data sheet curve. Check solids against your own data. Calibrated at 3000 rpm: E = 0.807 um/s (Meyerhofer; also E0 of Flack), k_eta = 10.28 (Flack, n = 1), C0 = 29.4 vol %. Emslie uses h0 = 100 um and 30 s and gives the wet film after that time.",
+  "model": "meyerhofer",
+  "values": {
+    "rpm": 3000.0,
+    "viscosity_cp": 132.25,
+    "density_g_cm3": 1.058,
+    "h0_um": 100.0,
+    "time_s": 30.0,
+    "evaporation_um_s": 0.807,
+    "k_eta": 10.28,
+    "n_evap": 1.0
+  },
+  "e_scaling": "sqrt",
+  "visc_law": "exponential",
+  "concentration": {
+    "mode": "weight",
+    "solids_pct": null,
+    "weight_pct": 35.3,
+    "density_solute_g_cm3": 1.27,
+    "density_solvent_g_cm3": 0.97
+  },
+  "uncertainties": {
+    "rpm": 0.0,
+    "viscosity_cp": 0.0,
+    "density_g_cm3": 0.0,
+    "h0_um": 0.0,
+    "time_s": 0.0,
+    "evaporation_um_s": 0.0,
+    "k_eta": 0.0,
+    "n_evap": 0.0,
+    "solids_pp": 0.0
+  }
+}
