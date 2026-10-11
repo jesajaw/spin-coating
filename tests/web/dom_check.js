@@ -21,11 +21,9 @@ for (const model of ['emslie','meyerhofer','flack']){
     for (const k of ['sigRpm','sigVisc','sigDensity','sigEvap','sigC0','sigH0','sigTime','sigKeta','sigNevap']) w.eval(`F.${k}.set(0,false)`);
   }
 }
-// preset save + load round trip
-set('in-model','flack'); set('in-visclaw','flack_table1'); $('preset-name').value='T1'; $('preset-save').click();
-set('in-model','emslie'); set('in-visclaw','exponential'); $('preset-select').value='T1'; $('preset-load').click();
-res.push(['preset-roundtrip', $('in-model').value+'/'+$('in-visclaw').value]);
 // visibility checks
+res.push(['no preset panel', $('preset-select')===null ? 'gone' : 'STILL THERE']);
+res.push(['plot has svg children', String($('plot').childNodes.length>10)]);
 set('in-model','flack'); set('in-visclaw','flack_table1');
 res.push(['paper law: k_eta hidden', $('in-keta').style.display]);
 set('in-model','emslie'); res.push(['emslie: evap hidden / h0 shown', $('in-evap').style.display+' / '+($('group-emslie').style.display||'shown')]);
